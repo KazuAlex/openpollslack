@@ -1,0 +1,30 @@
+{
+  "name": "openpoll",
+  "version": "1.0.0",
+  "description": "Open source poll slack app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KazuAlex/openpollslack.git"
+  },
+  "keywords": [
+    "opensource",
+    "poll",
+    "slack",
+    "app"
+  ],
+  "author": "KazuAlex",
+  "license": "GPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/KazuAlex/openpollslack/issues"
+  },
+  "homepage": "https://github.com/KazuAlex/openpollslack#readme",
+  "dependencies": {
+    "body-parser": "^1.19.0",
+    "express": "^4.17.1",
+    "request": "^2.88.0"
+  }
+}
