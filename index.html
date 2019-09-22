@@ -1,16 +1,88 @@
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8">
-    <meta name="slack-app-id" content="ANL7B2FDK">
+    <meta charset="utf-8" />
+    <meta name="slack-app-id" content="ANL7B2FDK" />
     <title>Open source poll for slack</title>
+    <!-- STYLES -->
+    <link rel="stylesheet" type="text/css" href="assets/css/index.css" />
+    <link rel="stylesheet" type="text/css" href="assets/css/bootstrap.min.css" />
+    <link href="https://fonts.googleapis.com/css?family=Roboto&display=swap" rel="stylesheet" />
+    <!-- SCRIPTS -->
+    <script type="text/javascript" src="assets/js/jquery.min.js"></script>
+    <script type="text/javascript" src="assets/js/bootstrap.bundle.min.js"></script>
   </head>
   <body>
-    <div>
-      <h1>Open source poll for slack</h1>
+    <div id="main">
+      <h1>
+        Open source poll for <img alt="slack" height="180" src="assets/slack_logo_white.svg" />
+      </h1>
+      <div>
+        <a href="https://slack.com/oauth/authorize?scope=incoming-webhook&client_id=768246087712.768249083461"><img alt="Add to slack" src="https://platform.slack-edge.com/img/add_to_slack@2x.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 2x, https://platform.slack-edge.com/img/add_to_slack@4x.png 4x" height="80"></a>
+      </div>
     </div>
-    <div>
-      <a href="https://slack.com/oauth/authorize?scope=incoming-webhook&client_id=768246087712.768249083461"><img alt=""Add to Slack"" height="40" width="139" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x" /></a>
+    <div id="usage">
+      <div class="usage">
+        <h1>How to use it ?</h1>
+      </div>
+      <div id="simple-poll" class="light-grey">
+        <div>
+          <div class="title">
+            <h2>Simple poll</h2>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <code>/openpoll "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="anonymous-poll">
+        <div>
+          <div class="title">
+            <h2>Anonymous poll</h2>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <code>/openpoll anonymous "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="limited-poll" class="light-grey">
+        <div>
+          <div class="title">
+            <h2>Limited choice poll</h2>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <code>/openpoll limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="both-poll">
+        <div>
+          <div class="title">
+            <h2>Anonymous limited choice poll</h2>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <code>/openpoll anonymous limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="bottom">
+      <div class="row">
+        <div class="cell col-12 col-sm-6 col-md-3">
+          <a href="https://github.com/KazuAlex/openpollslack">Github | Source code</a>
+        </div>
+        <div class="cell col-12 col-sm-6 col-md-3 col-lg-2">
+          <a href="/policy/">Privacy Policy</a>
+        </div>
+      </div>
     </div>
   </body>
 </html>

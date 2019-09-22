@@ -1,0 +1,66 @@
+body {
+}
+
+#main {
+  background-color: #1264A3;
+  color: #ffffff;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#main h1 {
+  font-family: 'Roboto', sans-serif;
+  font-weight: 900;
+  font-size: 54px;
+  text-align: center;
+}
+
+#usage > div {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#usage > div > div {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  text-align: center;
+}
+
+.light-grey {
+  background-color: #f7f8fa;
+}
+
+.card {
+  margin: 10px;
+}
+
+#bottom {
+  background-color: #1264A3;
+  color: #ffffff;
+  padding: 20px;
+}
+
+#bottom > .row > .cell {
+  text-align: center;
+}
+
+#bottom a,
+#bottom a:link,
+#bottom a:visited,
+#bottom a:hover,
+#bottom a:active {
+  text-decoration: none;
+  color: #ffffff;
+  font-family: 'Roboto', sans-serif;
+}

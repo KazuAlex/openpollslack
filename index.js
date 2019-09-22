@@ -2,10 +2,14 @@ const express = require('express');
 const server = express();
 const bodyParser = require('body-parser')
 const request = require('request');
+const compression = require('compression');
+const helmet = require('helmet');
 server.use(bodyParser.json());
 server.use(bodyParser.urlencoded({
   extended: true
 }));
+server.use(compression());
+server.use(helmet());
 
 const hostname = '127.0.0.1';
 const port = 5000;
