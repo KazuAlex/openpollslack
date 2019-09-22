@@ -31,4 +31,4 @@ Remember the four freedoms of the GPL :
 /openpoll anonymous limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
   
-For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` `` `code` ``  
+For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` and `` `code` ``  
