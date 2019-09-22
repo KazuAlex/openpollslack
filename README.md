@@ -14,11 +14,21 @@ Remember the four freedoms of the GPL :
 
 ## Command usages
 
-At this moment, only one command is available.  
+### Simple poll
 ```
-/openpoll "QUESTION ?" "FIRST CHOICE" "SECOND CHOICE" "THIRD CHOICE" ...
+/openpoll "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
-First argument are the question.  
-All following arguments are options.  
+### Anonymous poll
+```
+/openpoll anonymous "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+```
+### Limited choice poll
+```
+/openpoll limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+```
+### Anonymous limited choice poll
+```
+/openpoll anonymous limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+```
   
 For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` `` `code` ``  
