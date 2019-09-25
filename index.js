@@ -4,6 +4,7 @@ const bodyParser = require('body-parser')
 const request = require('request');
 const compression = require('compression');
 const helmet = require('helmet');
+const config = require('config');
 server.use(bodyParser.json());
 server.use(bodyParser.urlencoded({
   extended: true
@@ -259,7 +260,7 @@ server.post('/', (req, res) => {
 });
 
 server.post('/actions', (req, res) => {
-  res.setHeader('Content-Type', 'plain/text');
+  res.setHeader('Content-Type', 'text/html');
   res.send('');
 
   let response = '';
@@ -284,6 +285,14 @@ server.post('/actions', (req, res) => {
       let voters = value.voters ? value.voters : [];
       let newVoters = '';
 
+      let removeVote = false;
+      if (voters.includes(user_id)) {
+        removeVote = true;
+        voters = voters.filter(voter_id => voter_id != user_id);
+      } else {
+        voters.push(user_id);
+      }
+
       if (value.limited && value.limit) {
         let voteCount = 0;
         for (let b of blocks) {
@@ -295,16 +304,14 @@ server.post('/actions', (req, res) => {
           }
         }
 
+        if (removeVote) {
+          voteCount -= 1;
+        }
+
         if (voteCount >= value.limit) {
           console.log('voteCount >= value.limit', voteCount, value.limit);
           return;
         }
-      }
-
-      if (voters.includes(user_id)) {
-        voters = voters.filter(voter_id => voter_id != user_id);
-      } else {
-        voters.push(user_id);
       }
 
       if (voters.length === 0) {
@@ -344,6 +351,30 @@ server.post('/actions', (req, res) => {
       // console.log('error', error);
     });
   }
+});
+
+server.get('/redirect', (req, res) => {
+  console.log('query', {
+      client_id: config.get('client_id'),
+      client_secret: config.get('client_secret'),
+      code: req.query.code,
+  });
+  request({
+    uri: 'https://slack.com/api/oauth.access',
+    form: {
+      client_id: config.get('client_id'),
+      client_secret: config.get('client_secret'),
+      code: req.query.code,
+    },
+    method: 'post',
+    header: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  }, (error, response, body) => {
+    console.log(body);
+  });
+
+  res.status(301).redirect("https://openpoll.slack.alcor.space");
 });
 
 server.listen(port, hostname, () => {
