@@ -37,7 +37,7 @@ server.post('/', (req, res) => {
 
   if (body && body.trim() === 'help') {
     const response = {
-      response_type: 'in_channel',
+      response_type: 'ephemeral',
       blocks: [
         {
           type: 'section',
