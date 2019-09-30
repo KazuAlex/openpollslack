@@ -354,11 +354,6 @@ server.post('/actions', (req, res) => {
 });
 
 server.get('/redirect', (req, res) => {
-  console.log('query', {
-      client_id: config.get('client_id'),
-      client_secret: config.get('client_secret'),
-      code: req.query.code,
-  });
   request({
     uri: 'https://slack.com/api/oauth.access',
     form: {
@@ -374,7 +369,13 @@ server.get('/redirect', (req, res) => {
     console.log(body);
   });
 
-  res.status(301).redirect("https://openpoll.slack.alcor.space");
+  let uri = 'https://openpoll.slack.alcor.space';
+  if (req.query.code) {
+    uri += '?oauth=success';
+  } else {
+    uri += '?oauth=error';
+  }
+  res.status(301).redirect(uri);
 });
 
 server.listen(port, hostname, () => {

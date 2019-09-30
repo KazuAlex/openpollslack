@@ -64,3 +64,11 @@ body {
   color: #ffffff;
   font-family: 'Roboto', sans-serif;
 }
+
+#oauth-success, #oauth-error {
+  display: none;
+}
+
+#oauth-success.show, #oauth-error.show {
+  display: block;
+}
