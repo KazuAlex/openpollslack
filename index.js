@@ -142,7 +142,7 @@ server.post('/', (req, res) => {
       limit = 1;
     }
 
-    for (let option of body.match(/"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*'/g)) {
+    for (let option of body.match(/"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*|“[^“\\]*(?:\\[\S\s][^”\\]*)*”/g) || []) {
       let opt = option.substring(1, option.length - 1);
       if (question === null) {
         question = opt;
