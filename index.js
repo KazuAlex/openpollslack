@@ -22,7 +22,6 @@ server.post('/', (req, res) => {
   const response_url = req.body ? req.body.response_url : null;
 
   if (!response_url) {
-    console.log('no response_url');
     return;
   }
 
@@ -118,6 +117,7 @@ server.post('/', (req, res) => {
     });
     return;
   } else if (body) {
+    body = body.replace(/'/g, "\"").replace(/“/g, "\"").replace(/”/g, "\"");
     for (let arg of body.substr(0, body.indexOf("\"")).trim().split(' ')) {
       if (fetchLimit) {
         limit = parseInt(arg);
@@ -142,7 +142,7 @@ server.post('/', (req, res) => {
       limit = 1;
     }
 
-    for (let option of body.match(/"[^"\\]*(?:\\[\S\s][^"\\]*)*"|'[^'\\]*(?:\\[\S\s][^'\\]*)*|“[^“\\]*(?:\\[\S\s][^”\\]*)*”/g) || []) {
+    for (let option of body.match(/"[^"\\]*(?:\\[\S\s][^"\\]*)*"/g)) {
       let opt = option.substring(1, option.length - 1);
       if (question === null) {
         question = opt;
@@ -309,7 +309,6 @@ server.post('/actions', (req, res) => {
         }
 
         if (voteCount >= value.limit) {
-          console.log('voteCount >= value.limit', voteCount, value.limit);
           return;
         }
       }
@@ -347,8 +346,6 @@ server.post('/actions', (req, res) => {
         'Content-Type': 'application/json',
       },
     }, (error, response) => {
-      // console.log('response', response);
-      // console.log('error', error);
     });
   }
 });
@@ -366,7 +363,7 @@ server.get('/redirect', (req, res) => {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
   }, (error, response, body) => {
-    console.log(body);
+    // do nothing
   });
 
   let uri = 'https://openpoll.slack.alcor.space';
