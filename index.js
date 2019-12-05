@@ -28,6 +28,8 @@ server.post('/', (req, res) => {
   let question = null;
   const options = [];
   let body = req.body.text;
+  const user_id = req.body.user_id;
+  const cmd = req.body.command+' '+req.body.text;
 
   let isAnonymous = false;
   let isLimited = false;
@@ -117,32 +119,32 @@ server.post('/', (req, res) => {
     });
     return;
   } else if (body) {
-    body = body.replace(/'/g, "\"").replace(/“/g, "\"").replace(/”/g, "\"");
-    for (let arg of body.substr(0, body.indexOf("\"")).trim().split(' ')) {
-      if (fetchLimit) {
-        limit = parseInt(arg);
-        if (isNaN(limit)) {
-          limit = 1;
-          fetchLimit = false;
-        } else {
-          fetchLimit = false;
-          continue;
-        }
-      }
-
-      if (!isAnonymous && arg === 'anonymous') {
-        isAnonymous = true;
-      } else if (!isLimited && arg === 'limit') {
-        isLimited = true;
-        fetchLimit = true;
+    if (body.startsWith('anonymous')) {
+      isAnonymous = true;
+      body = body.substring(9).trim();
+    }
+    if (body.startsWith('limit')) {
+      body = body.substring(5).trim();
+      isLimited = true;
+      if (!isNaN(parseInt(body.charAt(0)))) {
+        limit = parseInt(body.substring(0, body.indexOf(' ')));
+        body = body.substring(body.indexOf(' ')).trim();
       }
     }
+    if (!isAnonymous && body.startsWith('anonymous')) {
+      isAnonymous = true;
+      body = body.substring(9).trim();
+    }
+
+    const lastSep = body.split('').pop();
+    const firstSep = body.charAt(0);
 
     if (isLimited && null === limit) {
       limit = 1;
     }
 
-    for (let option of body.match(/"[^"\\]*(?:\\[\S\s][^"\\]*)*"/g)) {
+    const regexp = new RegExp(firstSep+'[^'+firstSep+'\\\\]*(?:\\\\[\S\s][^'+lastSep+'\\\\]*)*'+lastSep, 'g');
+    for (let option of body.match(regexp)) {
       let opt = option.substring(1, option.length - 1);
       if (question === null) {
         question = opt;
@@ -178,6 +180,10 @@ server.post('/', (req, res) => {
             text: ':warning: Limited to '+ limit + ' vote' +(limit > 1 ? 's': ''),
           });
         }
+        elements.push({
+          type: 'mrkdwn',
+          text: ':eyes: by <@'+user_id+'>'
+        });
         blocks.push({
           type: 'context',
           elements: elements,
@@ -239,6 +245,10 @@ server.post('/', (req, res) => {
             type: 'mrkdwn',
             text: '<https://github.com/kazualex/openpollslack.git|Need help ?>',
           },
+          {
+            type: 'mrkdwn',
+            text: ':information_source: '+cmd,
+          }
         ],
       });
 
