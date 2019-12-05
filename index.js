@@ -166,8 +166,8 @@ server.post('/', (req, res) => {
 
       let voteLimit = 0;
 
+      let elements = [];
       if (isAnonymous || isLimited) {
-        let elements = [];
         if (isAnonymous) {
           elements.push({
             type: 'mrkdwn',
@@ -180,15 +180,15 @@ server.post('/', (req, res) => {
             text: ':warning: Limited to '+ limit + ' vote' +(limit > 1 ? 's': ''),
           });
         }
-        elements.push({
-          type: 'mrkdwn',
-          text: ':eyes: by <@'+user_id+'>'
-        });
-        blocks.push({
-          type: 'context',
-          elements: elements,
-        });
       }
+      elements.push({
+        type: 'mrkdwn',
+        text: ':eyes: by <@'+user_id+'>'
+      });
+      blocks.push({
+        type: 'context',
+        elements: elements,
+      });
       blocks.push({
         type: 'divider',
       });
