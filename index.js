@@ -284,8 +284,8 @@ server.post('/actions', (req, res) => {
     const actions = payload.actions;
     for (let action of actions) {
       let value = JSON.parse(action.value);
-      button_id = 2 + (value.id * 2);
-      context_id = 2 + (value.id * 2) + 1;
+      button_id = 3 + (value.id * 2);
+      context_id = 3 + (value.id * 2) + 1;
       if (value.anonymous || value.limited) {
         button_id += 1;
         context_id += 1;
