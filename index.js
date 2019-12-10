@@ -286,10 +286,6 @@ server.post('/actions', (req, res) => {
       let value = JSON.parse(action.value);
       button_id = 3 + (value.id * 2);
       context_id = 3 + (value.id * 2) + 1;
-      if (value.anonymous || value.limited) {
-        button_id += 1;
-        context_id += 1;
-      }
       let blockBtn = blocks[button_id];
       let block = blocks[context_id];
       let voters = value.voters ? value.voters : [];
