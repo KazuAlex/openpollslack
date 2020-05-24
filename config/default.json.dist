@@ -1,4 +1,7 @@
 {
   "client_id": "",
-  "client_secret": ""
+  "client_secret": "",
+  "token": "xoxb-replace",
+  "signin_secret": "",
+  "command": "openpoll"
 }

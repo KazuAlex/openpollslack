@@ -1,124 +1,126 @@
-const express = require('express');
-const server = express();
-const bodyParser = require('body-parser')
-const request = require('request');
-const compression = require('compression');
-const helmet = require('helmet');
+const { App, LogLevel } = require('@slack/bolt');
 const config = require('config');
-server.use(bodyParser.json());
-server.use(bodyParser.urlencoded({
-  extended: true
-}));
-server.use(compression());
-server.use(helmet());
 
-const hostname = '127.0.0.1';
-const port = 5000;
+const token = config.get('token');
+const signing_secret = config.get('signing_secret');
+const slackCommand = config.get('command');
 
-server.post('/', (req, res) => {
-  res.setHeader('Content-Type', 'plain/text');
-  res.send('');
+const app = new App({
+  signingSecret: signing_secret,
+  token: token,
+  clientId: config.get('client_id'),
+  clientSecret: config.get('client_secret'),
+  endpoints: {
+    events: '/slack/events',
+    commands: '/slack/commands',
+    actions: '/slack/actions',
+  },
+  installerOptions: {
+    installPath: '/slack/install',
+    redirectUriPath: '/slack/oauth_redirect',
+  },
+  logLevel: LogLevel.DEBUG,
+});
 
-  const response_url = req.body ? req.body.response_url : null;
+app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
+  await ack();
 
-  if (!response_url) {
-    return;
-  }
+  let body = (command && command.text) ? command.text.trim() : null;
 
-  let question = null;
-  const options = [];
-  let body = req.body.text;
-  const user_id = req.body.user_id;
-  const cmd = req.body.command+' '+req.body.text;
+  const isHelp = body ? 'help' === body : false;
 
-  let isAnonymous = false;
-  let isLimited = false;
-  let limit = null;
-  let fetchLimit = false;
+  const channel = (command && command.channel_id) ? command.channel_id : null;
 
-  if (body && body.trim() === 'help') {
-    const response = {
-      response_type: 'ephemeral',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Open source poll for slack*',
-          },
-        },
-        {
-          type: 'divider',
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Simple poll*',
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: "```\n/openpoll \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Anonymous poll*',
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: "```\n/openpoll anonymous \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Limited choice poll*',
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: "```\n/openpoll limit 2 \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '*Anonymous limited choice poll*',
-          },
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: "```\n/openpoll anonymous limit 2 \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
-          },
-        },
-      ],
-    };
+  const user_id = (command && command.user_id) ? command.user_id : null;
 
-    request({
-      uri: response_url,
-      body: JSON.stringify(response),
-      method: 'post',
-      header: {
-        'Content-Type': 'application/json',
+  if (isHelp) {
+    const blocks = [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Open source poll for slack*',
+        },
       },
+      {
+        type: 'divider',
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Simple poll*',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "```\n/"+slackCommand+" \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Anonymous poll*',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "```\n/"+slackCommand+" anonymous \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Limited choice poll*',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "```\n/"+slackCommand+" limit 2 \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*Anonymous limited choice poll*',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "```\n/"+slackCommand+" anonymous limit 2 \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
+        },
+      },
+    ];
+
+    await app.client.chat.postEphemeral({
+      token: token,
+      channel: channel,
+      user: user_id,
+      blocks: blocks,
     });
+
     return;
-  } else if (body) {
+  } else {
+    const cmd = `/${slackCommand} ${body}`;
+    let question = null;
+    const options = [];
+
+    let isAnonymous = false;
+    let isLimited = false;
+    let limit = null;
+    let fetchLimit = false;
+
     if (body.startsWith('anonymous')) {
       isAnonymous = true;
       body = body.substring(9).trim();
@@ -213,6 +215,7 @@ server.post('/', (req, res) => {
           },
           accessory: {
             type: 'button',
+            action_id: 'btn_vote',
             text: {
               type: 'plain_text',
               emoji: true,
@@ -252,136 +255,112 @@ server.post('/', (req, res) => {
         ],
       });
 
-      const response = {
-        response_type: 'in_channel',
+      await app.client.chat.postMessage({
+        token: token,
+        channel: channel,
         blocks: blocks,
-      };
-
-      request({
-        uri: response_url,
-        body: JSON.stringify(response),
-        method: 'post',
-        header: {
-          'Content-Type': 'application/json',
-        },
       });
+
+      return;
     }
   }
 });
 
-server.post('/actions', (req, res) => {
-  res.setHeader('Content-Type', 'text/html');
-  res.send('');
+(async () => {
+  await app.start(process.env.PORT || 5000);
 
-  let response = '';
-  if (req.body.payload) {
-    const payload = JSON.parse(req.body.payload);
-    const user_id = payload.user.id;
-    const message = payload.message;
+  console.log('Bolt app is running!');
+})();
 
-    response = message;
-    let blocks = message.blocks;
-    const actions = payload.actions;
-    for (let action of actions) {
-      let value = JSON.parse(action.value);
-      button_id = 3 + (value.id * 2);
-      context_id = 3 + (value.id * 2) + 1;
-      let blockBtn = blocks[button_id];
-      let block = blocks[context_id];
-      let voters = value.voters ? value.voters : [];
-      let newVoters = '';
+app.action('btn_vote', async ({ action, ack, body }) => {
+  await ack();
 
-      let removeVote = false;
-      if (voters.includes(user_id)) {
-        removeVote = true;
-        voters = voters.filter(voter_id => voter_id != user_id);
-      } else {
-        voters.push(user_id);
-      }
+  // console.log('body', body, 'action', action);
 
-      if (value.limited && value.limit) {
-        let voteCount = 0;
-        for (let b of blocks) {
-          if (b.accessory) {
-            let val = JSON.parse(b.accessory.value);
-            if (val.voters && val.voters.includes(user_id)) {
-              ++voteCount;
-            }
-          }
-        }
-
-        if (removeVote) {
-          voteCount -= 1;
-        }
-
-        if (voteCount >= value.limit) {
-          return;
-        }
-      }
-
-      if (voters.length === 0) {
-        newVoters = 'No votes';
-      } else {
-        newVoters = '';
-        for (let voter of voters) {
-          if (!value.anonymous) {
-            newVoters += '<@'+voter+'> ';
-          }
-        }
-
-        newVoters += voters.length +' ';
-        if (voters.length === 1) {
-          newVoters += 'vote';
-        } else {
-          newVoters += 'votes';
-        }
-      }
-
-      block.elements[0].text = newVoters;
-      value.voters = voters;
-      blockBtn.accessory.value = JSON.stringify(value);
-      blocks[context_id] = block;
-    }
-    response.blocks = blocks;
-
-    request({
-      uri: payload.response_url,
-      body: JSON.stringify(response),
-      method: 'post',
-      header: {
-        'Content-Type': 'application/json',
-      },
-    }, (error, response) => {
-    });
+  if (
+    !body
+    || !action
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.blocks
+    || !body.message.ts
+    || !body.channel
+    || !body.channel.id
+  ) {
+    console.log('error');
+    return;
   }
-});
 
-server.get('/redirect', (req, res) => {
-  request({
-    uri: 'https://slack.com/api/oauth.access',
-    form: {
-      client_id: config.get('client_id'),
-      client_secret: config.get('client_secret'),
-      code: req.query.code,
-    },
-    method: 'post',
-    header: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-  }, (error, response, body) => {
-    // do nothing
-  });
+  const user_id = body.user.id;
+  const message = body.message;
+  let blocks = message.blocks;
 
-  let uri = 'https://openpoll.slack.alcor.space';
-  if (req.query.code) {
-    uri += '?oauth=success';
+  const channel = body.channel.id;
+
+  let value = JSON.parse(action.value);
+  button_id = 3 + (value.id * 2);
+  context_id = 3 + (value.id * 2) + 1;
+  let blockBtn = blocks[button_id];
+  let block = blocks[context_id];
+  let voters = value.voters ? value.voters : [];
+  let newVoters = '';
+
+  let removeVote = false;
+  if (voters.includes(user_id)) {
+    removeVote = true;
+    voters = voters.filter(voter_id => voter_id != user_id);
   } else {
-    uri += '?oauth=error';
+    voters.push(user_id);
   }
-  res.status(301).redirect(uri);
-});
 
-server.listen(port, hostname, () => {
-  console.log('Hello there!');
-});
+  if (value.limited && value.limit) {
+    let voteCount = 0;
+    for (let b of blocks) {
+      if (b.accessory) {
+        let val = JSON.parse(b.accessory.value);
+        if (val.voters && val.voters.includes(user_id)) {
+          ++voteCount;
+        }
+      }
+    }
 
+    if (removeVote) {
+      voteCount -= 1;
+    }
+
+    if (voteCount >= value.limit) {
+      return;
+    }
+  }
+
+  if (voters.length === 0) {
+    newVoters = 'No votes';
+  } else {
+    newVoters = '';
+    for (let voter of voters) {
+      if (!value.anonymous) {
+        newVoters += '<@'+voter+'> ';
+      }
+    }
+
+    newVoters += voters.length +' ';
+    if (voters.length === 1) {
+      newVoters += 'vote';
+    } else {
+      newVoters += 'votes';
+    }
+  }
+
+  block.elements[0].text = newVoters;
+  value.voters = voters;
+  blockBtn.accessory.value = JSON.stringify(value);
+  blocks[context_id] = block;
+
+  await app.client.chat.update({
+    token: token,
+    channel: channel,
+    ts: message.ts,
+    blocks: blocks,
+  });
+});
