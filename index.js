@@ -31,7 +31,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
 
   const channel = (command && command.channel_id) ? command.channel_id : null;
 
-  const user_id = (command && command.user_id) ? command.user_id : null;
+  const userId = (command && command.user_id) ? command.user_id : null;
 
   if (isHelp) {
     const blocks = [
@@ -155,116 +155,34 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
       }
     }
 
-    const blocks = [];
+    const blocks = createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd);
 
-    if (question && options) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: question,
-        },
-      });
-
-      let voteLimit = 0;
-
-      let elements = [];
-      if (isAnonymous || isLimited) {
-        if (isAnonymous) {
-          elements.push({
-            type: 'mrkdwn',
-            text: ':shushing_face: Anonymous poll',
-          });
-        }
-        if (isLimited) {
-          elements.push({
-            type: 'mrkdwn',
-            text: ':warning: Limited to '+ limit + ' vote' +(limit > 1 ? 's': ''),
-          });
-        }
-      }
-      elements.push({
-        type: 'mrkdwn',
-        text: ':eyes: by <@'+user_id+'>'
-      });
-      blocks.push({
-        type: 'context',
-        elements: elements,
-      });
-      blocks.push({
-        type: 'divider',
-      });
-
-      let button_value = {
-        anonymous: isAnonymous,
-        limited: isLimited,
-        limit: limit,
-        voters: [],
-        id: null,
-      };
-
-      for (let i in options) {
-        let option = options[i];
-        btn_value = JSON.parse(JSON.stringify(button_value));
-        btn_value.id = i;
-        let block = {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: option,
-          },
-          accessory: {
-            type: 'button',
-            action_id: 'btn_vote',
-            text: {
-              type: 'plain_text',
-              emoji: true,
-              text: 'Vote',
-            },
-            value: JSON.stringify(btn_value),
-          },
-        };
-        blocks.push(block);
-        block = {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: 'No votes',
-            }
-          ],
-        };
-        blocks.push(block);
-      }
-
-      blocks.push({
-        type: 'divider',
-      });
-
-      blocks.push({
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: '<https://github.com/kazualex/openpollslack.git|Need help ?>',
-          },
-          {
-            type: 'mrkdwn',
-            text: ':information_source: '+cmd,
-          }
-        ],
-      });
-
-      await app.client.chat.postMessage({
-        token: token,
-        channel: channel,
-        blocks: blocks,
-      });
-
+    if (null === blocks) {
       return;
     }
+
+    await app.client.chat.postMessage({
+      token: token,
+      channel: channel,
+      blocks: blocks,
+    });
   }
 });
+
+const modalBlockInput = {
+  type: 'input',
+  element: {
+    type: 'plain_text_input',
+    placeholder: {
+      type: 'plain_text',
+      text: 'Write your choice',
+    },
+  },
+  label: {
+    type: 'plain_text',
+    text: ' ',
+  },
+};
 
 (async () => {
   await app.start(process.env.PORT || 5000);
@@ -272,10 +190,58 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
   console.log('Bolt app is running!');
 })();
 
-app.action('btn_vote', async ({ action, ack, body }) => {
+app.action('btn_add_choice', async ({ action, ack, body, client }) => {
   await ack();
 
-  // console.log('body', body, 'action', action);
+  if (
+    !body
+    || !body.view
+    || !body.view.blocks
+    || !body.view.hash
+    || !body.view.type
+    || !body.view.title
+    || !body.view.submit
+    || !body.view.close
+    || !body.view.id
+    || !body.view.private_metadata
+  ) {
+    console.log('error');
+    return;
+  }
+
+  let blocks = body.view.blocks;
+  const hash = body.view.hash;
+
+  let beginBlocks = blocks.slice(0, blocks.length - 1);
+  let endBlocks = blocks.slice(-1);
+
+  let tempModalBlockInput = JSON.parse(JSON.stringify(modalBlockInput));
+  tempModalBlockInput.block_id = 'choice_'+(blocks.length-8);
+
+  beginBlocks.push(tempModalBlockInput);
+  blocks = beginBlocks.concat(endBlocks);
+
+  const view = {
+    type: body.view.type,
+    private_metadata: body.view.private_metadata,
+    callback_id: 'modal_poll_submit',
+    title: body.view.title,
+    submit: body.view.submit,
+    close: body.view.close,
+    blocks: blocks,
+    external_id: body.view.id,
+  };
+
+  const result = await client.views.update({
+    token: token,
+    hash: hash,
+    view: view,
+    view_id: body.view.id,
+  });
+});
+
+app.action('btn_vote', async ({ action, ack, body }) => {
+  await ack();
 
   if (
     !body
@@ -364,3 +330,445 @@ app.action('btn_vote', async ({ action, ack, body }) => {
     blocks: blocks,
   });
 });
+
+app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, body }) => {
+  try {
+    await ack();
+
+    let tempModalBlockInput = JSON.parse(JSON.stringify(modalBlockInput));
+    tempModalBlockInput.block_id = 'choice_0';
+
+    const privateMetadata = {
+      anonymous: false,
+      limited: false,
+      channel: null,
+    };
+
+    const result = await client.views.open({
+      token: token,
+      trigger_id: shortcut.trigger_id,
+      view: {
+        type: 'modal',
+        callback_id: 'modal_poll_submit',
+        private_metadata: JSON.stringify(privateMetadata),
+        title: {
+          type: 'plain_text',
+          text: 'Create a poll',
+        },
+        submit: {
+          type: 'plain_text',
+          text: 'Create',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Cancel',
+        },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Create a poll by filling the following form.',
+            },
+          },
+          {
+            type: 'divider',
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Select a channel to post poll',
+            },
+          },
+          {
+            type: 'actions',
+            block_id: 'channel',
+            elements: [
+              {
+                type: 'channels_select',
+                action_id: 'modal_poll_channel',
+                placeholder: {
+                  type: 'plain_text',
+                  text: 'Select a channel',
+                },
+              },
+            ],
+          },
+          {
+            type: 'divider',
+          },
+          {
+            type: 'section',
+            block_id: 'options',
+            text: {
+              type: 'mrkdwn',
+              text: "Choose your poll's options"
+            },
+            accessory: {
+              type: 'checkboxes',
+              action_id: 'modal_poll_options',
+              options: [
+                {
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*Anonymous*'
+                  },
+                  description: {
+                    type: 'mrkdwn',
+                    text: '*This option makes your poll anonymous*'
+                  },
+                  value: 'anonymous'
+                },
+                {
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*Limited*'
+                  },
+                  description: {
+                    type: 'mrkdwn',
+                    text: '*This option limit the number of choices by user*'
+                  },
+                  value: 'limit'
+                }
+              ]
+            }
+          },
+          {
+            type: 'divider',
+          },
+          {
+            type: 'input',
+            label: {
+              type: 'plain_text',
+              text: 'Choose your limit',
+            },
+            element: {
+              type: 'plain_text_input',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Type a number',
+              },
+            },
+            optional: true,
+            block_id: 'limit',
+          },
+          {
+            type: 'divider',
+          },
+          {
+            type: 'input',
+            label: {
+              type: 'plain_text',
+              text: 'Ask your question :',
+            },
+            element: {
+              type: 'plain_text_input',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Write your question',
+              },
+            },
+            block_id: 'question',
+          },
+          {
+            type: 'divider',
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '*Create your choice :*',
+            },
+          },
+          tempModalBlockInput,
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                action_id: 'btn_add_choice',
+                text: {
+                  type: 'plain_text',
+                  text: '+ Add a choice',
+                  emoji: true,
+                },
+              },
+            ],
+          },
+        ],
+      }
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
+
+app.action('modal_poll_channel', async ({ action, ack, body, client }) => {
+  await ack();
+
+  if (
+    !action
+    && !action.selected_channel
+  ) {
+    return;
+  }
+
+  const privateMetadata = JSON.parse(body.view.private_metadata);
+  privateMetadata.channel = action.selected_channel;
+
+  const view = {
+    type: body.view.type,
+    private_metadata: JSON.stringify(privateMetadata),
+    callback_id: 'modal_poll_submit',
+    title: body.view.title,
+    submit: body.view.submit,
+    close: body.view.close,
+    blocks: body.view.blocks,
+    external_id: body.view.id,
+  };
+
+  const result = await client.views.update({
+    token: token,
+    hash: body.view.hash,
+    view: view,
+    view_id: body.view.id,
+  });
+});
+
+app.action('modal_poll_options', async ({ action, ack, body, client }) => {
+  await ack();
+
+  if (
+    !body
+    || !body.view
+    || !body.view.private_metadata
+  ) {
+    return;
+  }
+
+  const privateMetadata = JSON.parse(body.view.private_metadata);
+  // let privateMetadata = {
+  //   anonymous: false,
+  //   limited: false,
+  // };
+
+  privateMetadata.anonymous = false;
+  privateMetadata.limited = false;
+  for (const option of action.selected_options) {
+    if ('anonymous' === option.value) {
+      privateMetadata.anonymous = true;
+    } else if ('limit' === option.value) {
+      privateMetadata.limited = true;
+    }
+  }
+
+  const view = {
+    type: body.view.type,
+    private_metadata: JSON.stringify(privateMetadata),
+    callback_id: 'modal_poll_submit',
+    title: body.view.title,
+    submit: body.view.submit,
+    close: body.view.close,
+    blocks: body.view.blocks,
+    external_id: body.view.id,
+  };
+
+  const result = await client.views.update({
+    token: token,
+    hash: body.view.hash,
+    view: view,
+    view_id: body.view.id,
+  });
+});
+
+app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
+  await ack();
+
+  if (
+    !view
+    || !body
+    || !view.blocks
+    || !view.state
+    || !view.private_metadata
+    || !body.user
+    || !body.user.id
+  ) {
+    return;
+  }
+
+  const privateMetadata = JSON.parse(view.private_metadata);
+  const userId = body.user.id;
+
+  const state = view.state;
+  let question = null;
+  const options = [];
+  const isAnonymous = privateMetadata.anonymous;
+  const isLimited = privateMetadata.limited;
+  let limit = 1;
+  const channel = privateMetadata.channel;
+
+  if (state.values) {
+    for (const optionName in state.values) {
+      const option = state.values[optionName][Object.keys(state.values[optionName])[0]];
+      if ('question' === optionName) {
+        question = option.value;
+      } else if ('limit' === optionName) {
+        limit = parseInt(option.value, 10);
+      } else if (optionName.startsWith('choice_')) {
+        options.push(option.value);
+      }
+    }
+  }
+
+  if (
+    !question
+    || 0 === options.length
+  ) {
+    return;
+  }
+
+  const cmd = createCmdFromInfos(question, options, isAnonymous, isLimited, limit);
+
+  const blocks = createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd);
+
+  await app.client.chat.postMessage({
+    token: token,
+    channel: channel,
+    blocks: blocks,
+  });
+});
+
+function createCmdFromInfos(question, options, isAnonymous, isLimited, limit) {
+  let cmd = `/${slackCommand}`;
+  if (isAnonymous) {
+    cmd += ` anonymous`
+  }
+  if (isLimited) {
+    cmd += ` limit`
+  }
+  if (limit > 1) {
+    cmd += ` ${limit}`
+  }
+
+  question = question.replace(/"/g, "\\\"");
+  cmd += ` "${question}"`
+
+  for (let option of options) {
+    option = option.replace(/"/g, "\\\"");
+    cmd += ` "${option}"`
+  }
+
+  return cmd;
+}
+
+function createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd) {
+  if (
+    !question
+    || !options
+    || 0 === options.length
+  ) {
+    return null;
+  }
+
+  const blocks = [];
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: question,
+    },
+  });
+
+  let voteLimit = 0;
+
+  let elements = [];
+  if (isAnonymous || isLimited) {
+    if (isAnonymous) {
+      elements.push({
+        type: 'mrkdwn',
+        text: ':shushing_face: Anonymous poll',
+      });
+    }
+    if (isLimited) {
+      elements.push({
+        type: 'mrkdwn',
+        text: ':warning: Limited to '+ limit + ' vote' +(limit > 1 ? 's': ''),
+      });
+    }
+  }
+  elements.push({
+    type: 'mrkdwn',
+    text: ':eyes: by <@'+userId+'>'
+  });
+  blocks.push({
+    type: 'context',
+    elements: elements,
+  });
+  blocks.push({
+    type: 'divider',
+  });
+
+  let button_value = {
+    anonymous: isAnonymous,
+    limited: isLimited,
+    limit: limit,
+    voters: [],
+    id: null,
+  };
+
+  for (let i in options) {
+    let option = options[i];
+    btn_value = JSON.parse(JSON.stringify(button_value));
+    btn_value.id = i;
+    let block = {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: option,
+      },
+      accessory: {
+        type: 'button',
+        action_id: 'btn_vote',
+        text: {
+          type: 'plain_text',
+          emoji: true,
+          text: 'Vote',
+        },
+        value: JSON.stringify(btn_value),
+      },
+    };
+    blocks.push(block);
+    block = {
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: 'No votes',
+        }
+      ],
+    };
+    blocks.push(block);
+  }
+
+  blocks.push({
+    type: 'divider',
+  });
+
+  blocks.push({
+    type: 'context',
+    elements: [
+      {
+        type: 'mrkdwn',
+        text: '<https://github.com/kazualex/openpollslack.git|Need help ?>',
+      },
+      {
+        type: 'mrkdwn',
+        text: ':information_source: '+cmd,
+      }
+    ],
+  });
+
+  return blocks;
+}
