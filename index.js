@@ -1,9 +1,11 @@
 const { App, LogLevel } = require('@slack/bolt');
 const config = require('config');
 
+const port = config.get('port');
 const token = config.get('token');
 const signing_secret = config.get('signing_secret');
 const slackCommand = config.get('command');
+const helpLink = config.get('help_link');
 
 const app = new App({
   signingSecret: signing_secret,
@@ -32,6 +34,8 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
   const channel = (command && command.channel_id) ? command.channel_id : null;
 
   const userId = (command && command.user_id) ? command.user_id : null;
+
+  console.log('user_id', userId);
 
   if (isHelp) {
     const blocks = [
@@ -106,7 +110,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
     await app.client.chat.postEphemeral({
       token: token,
       channel: channel,
-      user: user_id,
+      user: userId,
       blocks: blocks,
     });
 
@@ -185,7 +189,7 @@ const modalBlockInput = {
 };
 
 (async () => {
-  await app.start(process.env.PORT || 5000);
+  await app.start(process.env.PORT || port);
 
   console.log('Bolt app is running!');
 })();
@@ -761,7 +765,7 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
     elements: [
       {
         type: 'mrkdwn',
-        text: '<https://github.com/kazualex/openpollslack.git|Need help ?>',
+        text: `<${helpLink}|Need help ?>`,
       },
       {
         type: 'mrkdwn',
