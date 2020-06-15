@@ -4,5 +4,8 @@
   "help_link": "https://github.com/kazualex/openpollslack.git",
   "client_id": "",
   "client_secret": "",
-  "signin_secret": ""
+  "signin_secret": "",
+  "state_secret": "CHANGE ME",
+  "oauth_success": "https://openpoll.slack.alcor.space/?oauth=success",
+  "oauth_failure": "https://openpoll.slack.alcor.space/?oauth=error"
 }

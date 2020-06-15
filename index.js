@@ -18,7 +18,7 @@ const app = new App({
   clientId: config.get('client_id'),
   clientSecret: config.get('client_secret'),
   scopes: ['app_mentions:read', 'commands', 'chat:write.public', 'chat:write'],
-  stateSecret: 'my-state-secret',
+  stateSecret: config.get('state_secret'),
   endpoints: {
     events: '/slack/events',
     commands: '/slack/commands',
@@ -29,10 +29,10 @@ const app = new App({
     redirectUriPath: '/slack/oauth_redirect',
     callbackOptions: {
       success: (installation, installOptions, req, res) => {
-        res.send('successful!');
+        res.redirect(config.get('oauth_success'));
       },
       failure: (error, installOptions , req, res) => {
-        res.send('failure');
+        res.redirect(config.get('oauth_failure'));
       },
     },
   },
