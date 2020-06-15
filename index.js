@@ -13,20 +13,12 @@ const db = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
 
 db.push('/token', {}, false);
 
-const authorize = async ({ teamId }) => {
-  try {
-    return db.getData(`/token/${teamId}`);
-  } catch (e) {
-    throw new Error('No matching authorizations');
-  }
-};
-
 const app = new App({
   signingSecret: signing_secret,
-  authorize: authorize,
   clientId: config.get('client_id'),
   clientSecret: config.get('client_secret'),
   scopes: ['app_mentions:read', 'commands', 'chat:write.public', 'chat:write'],
+  stateSecret: 'my-state-secret',
   endpoints: {
     events: '/slack/events',
     commands: '/slack/commands',
@@ -71,8 +63,6 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
   const channel = (command && command.channel_id) ? command.channel_id : null;
 
   const userId = (command && command.user_id) ? command.user_id : null;
-
-  console.log('user_id', userId);
 
   if (isHelp) {
     const blocks = [
