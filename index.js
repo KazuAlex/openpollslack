@@ -1,17 +1,32 @@
 const { App, LogLevel } = require('@slack/bolt');
 const config = require('config');
 
+const { JsonDB } = require('node-json-db');
+const JsonDBConfig = require('node-json-db/dist/lib/JsonDBConfig').Config;
+
 const port = config.get('port');
-const token = config.get('token');
 const signing_secret = config.get('signing_secret');
 const slackCommand = config.get('command');
 const helpLink = config.get('help_link');
 
+const db = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
+
+db.push('/token', {}, false);
+
+const authorize = async ({ teamId }) => {
+  try {
+    return db.getData(`/token/${teamId}`);
+  } catch (e) {
+    throw new Error('No matching authorizations');
+  }
+};
+
 const app = new App({
   signingSecret: signing_secret,
-  token: token,
+  authorize: authorize,
   clientId: config.get('client_id'),
   clientSecret: config.get('client_secret'),
+  scopes: ['app_mentions:read', 'commands', 'chat:write.public', 'chat:write'],
   endpoints: {
     events: '/slack/events',
     commands: '/slack/commands',
@@ -20,11 +35,33 @@ const app = new App({
   installerOptions: {
     installPath: '/slack/install',
     redirectUriPath: '/slack/oauth_redirect',
+    callbackOptions: {
+      success: (installation, installOptions, req, res) => {
+        res.send('successful!');
+      },
+      failure: (error, installOptions , req, res) => {
+        res.send('failure');
+      },
+    },
+  },
+  installationStore: {
+    storeInstallation: (installation) => {
+      db.push(`/token/${installation.team.id}`, installation, false);
+      db.reload();
+      return installation.teamId;
+    },
+    fetchInstallation: (InstallQuery) => {
+      try {
+        return db.getData(`/token/${InstallQuery.teamId}`);
+      } catch (e) {
+        throw new Error('No matching authorizations');
+      }
+    },
   },
   logLevel: LogLevel.DEBUG,
 });
 
-app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
+app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
   await ack();
 
   let body = (command && command.text) ? command.text.trim() : null;
@@ -108,7 +145,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
     ];
 
     await app.client.chat.postEphemeral({
-      token: token,
+      token: context.botToken,
       channel: channel,
       user: userId,
       blocks: blocks,
@@ -166,7 +203,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say }) => {
     }
 
     await app.client.chat.postMessage({
-      token: token,
+      token: context.botToken,
       channel: channel,
       blocks: blocks,
     });
@@ -194,7 +231,7 @@ const modalBlockInput = {
   console.log('Bolt app is running!');
 })();
 
-app.action('btn_add_choice', async ({ action, ack, body, client }) => {
+app.action('btn_add_choice', async ({ action, ack, body, client, context }) => {
   await ack();
 
   if (
@@ -237,14 +274,14 @@ app.action('btn_add_choice', async ({ action, ack, body, client }) => {
   };
 
   const result = await client.views.update({
-    token: token,
+    token: context.botToken,
     hash: hash,
     view: view,
     view_id: body.view.id,
   });
 });
 
-app.action('btn_vote', async ({ action, ack, body }) => {
+app.action('btn_vote', async ({ action, ack, body, context }) => {
   await ack();
 
   if (
@@ -328,14 +365,14 @@ app.action('btn_vote', async ({ action, ack, body }) => {
   blocks[context_id] = block;
 
   await app.client.chat.update({
-    token: token,
+    token: context.botToken,
     channel: channel,
     ts: message.ts,
     blocks: blocks,
   });
 });
 
-app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, body }) => {
+app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) => {
   try {
     await ack();
 
@@ -349,7 +386,7 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, body }) 
     };
 
     const result = await client.views.open({
-      token: token,
+      token: context.botToken,
       trigger_id: shortcut.trigger_id,
       view: {
         type: 'modal',
@@ -508,7 +545,7 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, body }) 
   }
 });
 
-app.action('modal_poll_channel', async ({ action, ack, body, client }) => {
+app.action('modal_poll_channel', async ({ action, ack, body, client, context }) => {
   await ack();
 
   if (
@@ -533,14 +570,14 @@ app.action('modal_poll_channel', async ({ action, ack, body, client }) => {
   };
 
   const result = await client.views.update({
-    token: token,
+    token: context.botToken,
     hash: body.view.hash,
     view: view,
     view_id: body.view.id,
   });
 });
 
-app.action('modal_poll_options', async ({ action, ack, body, client }) => {
+app.action('modal_poll_options', async ({ action, ack, body, client, context }) => {
   await ack();
 
   if (
@@ -579,7 +616,7 @@ app.action('modal_poll_options', async ({ action, ack, body, client }) => {
   };
 
   const result = await client.views.update({
-    token: token,
+    token: context.botToken,
     hash: body.view.hash,
     view: view,
     view_id: body.view.id,
@@ -637,7 +674,7 @@ app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
   const blocks = createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd);
 
   await app.client.chat.postMessage({
-    token: token,
+    token: context.botToken,
     channel: channel,
     blocks: blocks,
   });

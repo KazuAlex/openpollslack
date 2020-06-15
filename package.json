@@ -29,6 +29,7 @@
     "config": "^3.3.1",
     "express": "^4.17.1",
     "helmet": "^3.22.0",
+    "node-json-db": "^1.1.0",
     "request": "^2.88.2"
   }
 }

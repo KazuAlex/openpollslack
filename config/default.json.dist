@@ -1,9 +1,8 @@
 {
   "port": 5000,
+  "command": "openpoll",
+  "help_link": "https://github.com/kazualex/openpollslack.git",
   "client_id": "",
   "client_secret": "",
-  "token": "xoxb-replace",
-  "signin_secret": "",
-  "command": "openpoll",
-  "help_link": "https://github.com/kazualex/openpollslack.git"
+  "signin_secret": ""
 }

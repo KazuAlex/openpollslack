@@ -33,6 +33,10 @@ Remember the four freedoms of the GPL :
   
 For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` and `` `code` ``  
 
+## Self hosted installation
+
+Check the wiki
+
 ## Support me
 
 To support of thank me, you can contact me. I would be happy to provide you my PayPal address.
