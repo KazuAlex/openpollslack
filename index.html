@@ -13,6 +13,14 @@
     <script type="text/javascript" src="/assets/js/bootstrap.bundle.min.js"></script>
   </head>
   <body>
+    <div class="navigation">
+      <div class="up" onclick="goUp()">
+        🡅 
+      </div>
+      <div class="down" onclick="goDown()">
+        🡇
+      </div>
+    </div>
     <div id="main">
       <h1>
         Open source poll for <img alt="slack" height="180" src="/assets/slack_logo_white.svg" />
@@ -46,7 +54,12 @@
           </div>
           <div class="card">
             <div class="card-body">
-              <code>/poll "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              <div class="command">
+                <code>/poll "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              </div>
+              <div class="image">
+                <img src="/assets/poll-simple.png" alt="Simple poll" />
+              </div>
             </div>
           </div>
         </div>
@@ -58,7 +71,12 @@
           </div>
           <div class="card">
             <div class="card-body">
-              <code>/poll anonymous "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              <div class="command">
+                <code>/poll anonymous "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              </div>
+              <div class="image">
+                <img src="/assets/poll-anonymous.png" alt="Anonymous poll" />
+              </div>
             </div>
           </div>
         </div>
@@ -70,7 +88,12 @@
           </div>
           <div class="card">
             <div class="card-body">
-              <code>/poll limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              <div class="command">
+                <code>/poll limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              </div>
+              <div class="image">
+                <img src="/assets/poll-limited.png" alt="Limited poll" />
+              </div>
             </div>
           </div>
         </div>
@@ -82,7 +105,12 @@
           </div>
           <div class="card">
             <div class="card-body">
-              <code>/poll anonymous limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              <div class="command">
+                <code>/poll anonymous limit 2 "What's you favourite color ?" "Red" "Green" "Blue" "Yellow"</code>
+              </div>
+              <div class="image">
+                <img src="/assets/poll-both.png" alt="Anonymous limited poll" />
+              </div>
             </div>
           </div>
         </div>
@@ -113,6 +141,7 @@
         </div>
       </div>
     </div>
+
     <script type="text/javascript">
       const urlParams = new URLSearchParams(window.location.search);
       const oauth = urlParams.get('oauth');
@@ -123,6 +152,47 @@
         const oauthDiv = document.getElementById('oauth-success');
         oauthDiv.className = 'show';
       }
+
+      function goUp() {
+        const screenHeight = window.innerHeight;
+
+        let currentY = window.scrollY - (window.scrollY % screenHeight);
+        let nextY = currentY;
+        if (0 === (window.scrollY % screenHeight)) {
+          nextY = currentY - screenHeight;
+        }
+        window.scrollTo(window.scrollX, nextY);
+      }
+
+      function goDown() {
+        const screenHeight = window.innerHeight;
+
+        let currentY = window.scrollY - (window.scrollY % screenHeight);
+        let nextY = currentY + screenHeight;
+        window.scrollTo(window.scrollX, nextY);
+      }
+
+      const ARROW_LEFT = 37;
+      const ARROW_UP = 38;
+      const ARROW_RIGHT = 39;
+      const ARROW_DOWN = 40;
+      document.addEventListener('keyup', function(event) {
+        if (
+          ARROW_UP === event.which
+          || ARROW_LEFT === event.which
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          goUp();
+        } else if (
+          ARROW_DOWN === event.which
+          || ARROW_RIGHT === event.which
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          goDown();
+        }
+      });
     </script>
   </body>
 </html>
