@@ -37,7 +37,7 @@ For both question and choices, feel free to use slack's emoji, `*bold*` `~strike
 
 ## Self hosted installation
 
-Wiki pages are available to help you with the [app configuration](https://github.com/KazuAlex/openpollslack/wiki/Self-hosted-installation-(v2)) and the [web page configuration](wiki/Web-page).
+Wiki pages are available to help you with the [app configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Self-hosted-installation-(v2)) and the [web page configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Web-page).
 
 ## Support me
 
