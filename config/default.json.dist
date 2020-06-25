@@ -1,4 +1,11 @@
 {
+  "port": 5000,
+  "command": "openpoll",
+  "help_link": "https://github.com/kazualex/openpollslack.git",
   "client_id": "",
-  "client_secret": ""
+  "client_secret": "",
+  "signing_secret": "",
+  "state_secret": "CHANGE ME",
+  "oauth_success": "https://openpoll.slack.alcor.space/?oauth=success",
+  "oauth_failure": "https://openpoll.slack.alcor.space/?oauth=error"
 }

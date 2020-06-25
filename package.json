@@ -1,6 +1,6 @@
 {
   "name": "openpoll",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Open source poll slack app",
   "main": "index.js",
   "scripts": {
@@ -23,11 +23,13 @@
   },
   "homepage": "https://github.com/KazuAlex/openpollslack#readme",
   "dependencies": {
+    "@slack/bolt": "^2.1.1",
     "body-parser": "^1.19.0",
     "compression": "^1.7.4",
     "config": "^3.3.1",
     "express": "^4.17.1",
     "helmet": "^3.22.0",
+    "node-json-db": "^1.1.0",
     "request": "^2.88.2"
   }
 }

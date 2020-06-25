@@ -1,6 +1,8 @@
 # Open source poll for slack
 
 Welcome to the open source poll for slack.  
+This repository is hosted on [GitLab](https://gitlab.com/KazuAlex/openpollslack). [Github repository](https://github.com/KazuAlex/openpollslack) is only a mirror.  
+But feel free to open new issues on both.  
 
 ## License
 
@@ -32,6 +34,10 @@ Remember the four freedoms of the GPL :
 ```
   
 For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` and `` `code` ``  
+
+## Self hosted installation
+
+Wiki pages are available to help you with the [app configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Self-hosted-installation-(v2)) and the [web page configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Web-page).
 
 ## Support me
 

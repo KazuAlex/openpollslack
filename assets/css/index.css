@@ -19,18 +19,30 @@ body {
 }
 
 #usage > div {
-  min-height: 100vh;
+  min-height: 700px;
+  height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 #usage > div > div {
-  min-height: 100vh;
+  min-height: 700px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+}
+
+#usage .card-body > .command {
+  border-radius: 10px;
+  border: rgba(29,28,29,.5) 1px solid;
+  padding: 5px 10px 10px 10px;
+}
+
+#usage .card-body > .image > img {
+  max-height: 500px;
 }
 
 .title {
@@ -71,4 +83,24 @@ body {
 
 #oauth-success.show, #oauth-error.show {
   display: block;
+}
+
+.navigation {
+  display: flex;
+  flex-direction: column;
+  width: auto;
+
+  position: fixed;
+  right: 0;
+  top: calc(50vh - 60px);
+
+  margin-right: 20px;
+
+  user-select: none;
+}
+
+.navigation > .up,
+.navigation > .down {
+  font-size: 40px;
+  cursor: pointer;
 }
