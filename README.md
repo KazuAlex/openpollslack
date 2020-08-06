@@ -18,19 +18,19 @@ Remember the four freedoms of the GPL :
 
 ### Simple poll
 ```
-/openpoll "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+/poll "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
 ### Anonymous poll
 ```
-/openpoll anonymous "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+/poll anonymous "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
 ### Limited choice poll
 ```
-/openpoll limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+/poll limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
 ### Anonymous limited choice poll
 ```
-/openpoll anonymous limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+/poll anonymous limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
   
 For both question and choices, feel free to use slack's emoji, `*bold*` `~strike~` `_italics_` and `` `code` ``  
@@ -41,4 +41,4 @@ Wiki pages are available to help you with the [app configuration](https://gitlab
 
 ## Support me
 
-To support of thank me, you can contact me. I would be happy to provide you my PayPal address.
+To support or thank me, you can contact me. I would be happy to provide you my PayPal address.
