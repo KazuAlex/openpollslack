@@ -1,7 +1,7 @@
 {
   "port": 5000,
   "command": "openpoll",
-  "help_link": "https://github.com/kazualex/openpollslack.git",
+  "help_link": "https://gitlab.com/kazualex/openpollslack.git",
   "client_id": "",
   "client_secret": "",
   "signing_secret": "",
