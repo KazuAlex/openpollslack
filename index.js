@@ -38,8 +38,18 @@ const app = new App({
   },
   installationStore: {
     storeInstallation: (installation) => {
+      // save informations
       db.push(`/token/${installation.team.id}`, installation, false);
       db.reload();
+
+      // distinct scopes
+      installation = db.getData(`/token/${installation.team.id}`);
+      installation.bot.scopes = installation.bot.scopes.filter(function (value, index, self) {
+        return index === self.indexOf(value);
+      });
+      db.push(`/token/${installation.team.id}`, installation, false);
+      db.reload();
+
       return installation.teamId;
     },
     fetchInstallation: (InstallQuery) => {
