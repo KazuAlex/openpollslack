@@ -17,7 +17,7 @@ const app = new App({
   signingSecret: signing_secret,
   clientId: config.get('client_id'),
   clientSecret: config.get('client_secret'),
-  scopes: ['commands', 'chat:write.public', 'chat:write'],
+  scopes: ['commands', 'chat:write.public', 'chat:write', 'groups:write'],
   stateSecret: config.get('state_secret'),
   endpoints: {
     events: '/slack/events',
