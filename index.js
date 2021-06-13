@@ -4,14 +4,20 @@ const config = require('config');
 const { JsonDB } = require('node-json-db');
 const JsonDBConfig = require('node-json-db/dist/lib/JsonDBConfig').Config;
 
+const { Mutex, withTimeout } = require('async-mutex');
+
 const port = config.get('port');
 const signing_secret = config.get('signing_secret');
 const slackCommand = config.get('command');
 const helpLink = config.get('help_link');
 
-const db = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
+const orgDb = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
+const pollsDb = new JsonDB(new JsonDBConfig('config/polls', true, false, '/'));
 
-db.push('/token', {}, false);
+const mutexes = {};
+
+orgDb.push('/token', {}, false);
+pollsDb.push('/polls', {}, false);
 
 const app = new App({
   signingSecret: signing_secret,
@@ -39,22 +45,22 @@ const app = new App({
   installationStore: {
     storeInstallation: (installation) => {
       // save informations
-      db.push(`/token/${installation.team.id}`, installation, false);
-      db.reload();
+      orgDb.push(`/token/${installation.team.id}`, installation, false);
+      orgDb.reload();
 
       // distinct scopes
-      installation = db.getData(`/token/${installation.team.id}`);
+      installation = orgDb.getData(`/token/${installation.team.id}`);
       installation.bot.scopes = installation.bot.scopes.filter(function (value, index, self) {
         return index === self.indexOf(value);
       });
-      db.push(`/token/${installation.team.id}`, installation, false);
-      db.reload();
+      orgDb.push(`/token/${installation.team.id}`, installation, false);
+      orgDb.reload();
 
       return installation.teamId;
     },
     fetchInstallation: (InstallQuery) => {
       try {
-        return db.getData(`/token/${InstallQuery.teamId}`);
+        return orgDb.getData(`/token/${InstallQuery.teamId}`);
       } catch (e) {
         throw new Error('No matching authorizations');
       }
@@ -306,70 +312,111 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   const channel = body.channel.id;
 
   let value = JSON.parse(action.value);
-  button_id = 3 + (value.id * 2);
-  context_id = 3 + (value.id * 2) + 1;
-  let blockBtn = blocks[button_id];
-  let block = blocks[context_id];
-  let voters = value.voters ? value.voters : [];
-  let newVoters = '';
 
-  let removeVote = false;
-  if (voters.includes(user_id)) {
-    removeVote = true;
-    voters = voters.filter(voter_id => voter_id != user_id);
-  } else {
-    voters.push(user_id);
+  if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
+    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 1000);
   }
 
-  if (value.limited && value.limit) {
-    let voteCount = 0;
-    for (let b of blocks) {
-      if (b.accessory) {
-        let val = JSON.parse(b.accessory.value);
-        if (val.voters && val.voters.includes(user_id)) {
-          ++voteCount;
+  mutexes[`${message.team}/${channel}/${message.ts}`]
+    .acquire()
+    .then(async (release) => {
+      pollsDb.reload();
+      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
+      poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+
+      if (0 === Object.keys(poll).length) {
+        for (const b of blocks) {
+          if (
+            b.hasOwnProperty('accessory')
+            && b.accessory.hasOwnProperty('value')
+          ) {
+            const val = JSON.parse(b.accessory.value);
+            poll[val.id] = val.voters ? val.voters : [];
+          }
         }
       }
-    }
+      button_id = 3 + (value.id * 2);
+      context_id = 3 + (value.id * 2) + 1;
+      let blockBtn = blocks[button_id];
+      let block = blocks[context_id];
+      let voters = value.voters ? value.voters : [];
 
-    if (removeVote) {
-      voteCount -= 1;
-    }
-
-    if (voteCount >= value.limit) {
-      return;
-    }
-  }
-
-  if (voters.length === 0) {
-    newVoters = 'No votes';
-  } else {
-    newVoters = '';
-    for (let voter of voters) {
-      if (!value.anonymous) {
-        newVoters += '<@'+voter+'> ';
+      let removeVote = false;
+      if (poll[value.id].includes(user_id)) {
+        removeVote = true;
+        poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
+      } else {
+        poll[value.id].push(user_id);
       }
-    }
 
-    newVoters += voters.length +' ';
-    if (voters.length === 1) {
-      newVoters += 'vote';
-    } else {
-      newVoters += 'votes';
-    }
-  }
+      if (value.limited && value.limit) {
+        let voteCount = 0;
+        for (const p of poll) {
+          if (p.includes(user_id)) {
+            ++voteCount;
+          }
+        }
 
-  block.elements[0].text = newVoters;
-  value.voters = voters;
-  blockBtn.accessory.value = JSON.stringify(value);
-  blocks[context_id] = block;
+        if (removeVote) {
+          voteCount -= 1;
+        }
 
-  await app.client.chat.update({
-    token: context.botToken,
-    channel: channel,
-    ts: message.ts,
-    blocks: blocks,
-  });
+        if (voteCount >= value.limit) {
+          release();
+          return;
+        }
+      }
+
+      for (const i in blocks) {
+        b = blocks[i];
+        if (
+          b.hasOwnProperty('accessory')
+          && b.accessory.hasOwnProperty('value')
+        ) {
+          let val = JSON.parse(b.accessory.value);
+          if (!val.hasOwnProperty('voters')) {
+            val.voters = [];
+          }
+
+          val.voters = poll[val.id];
+          let newVoters = '';
+
+          if (poll[val.id].length === 0) {
+            newVoters = 'No votes';
+          } else {
+            newVoters = '';
+            for (const voter of poll[val.id]) {
+              if (!val.anonymous) {
+                newVoters += '<@'+voter+'> ';
+              }
+            }
+
+            newVoters += poll[val.id].length +' ';
+            if (poll[val.id].length === 1) {
+              newVoters += 'vote';
+            } else {
+              newVoters += 'votes';
+            }
+          }
+
+          blocks[i].accessory.value = JSON.stringify(val);
+          const nextI = ''+(parseInt(i)+1);
+          if (blocks[nextI].hasOwnProperty('elements')) {
+            blocks[nextI].elements[0].text = newVoters;
+          }
+        }
+      }
+
+      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
+
+      await app.client.chat.update({
+        token: context.botToken,
+        channel: channel,
+        ts: message.ts,
+        blocks: blocks,
+      });
+      release();
+    });
 });
 
 app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) => {
