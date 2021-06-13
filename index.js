@@ -314,12 +314,11 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   let value = JSON.parse(action.value);
 
   if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 1000);
+    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
   }
 
-  mutexes[`${message.team}/${channel}/${message.ts}`]
-    .acquire()
-    .then(async (release) => {
+  const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+    try {
       pollsDb.reload();
       pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
       poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
@@ -351,9 +350,11 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
 
       if (value.limited && value.limit) {
         let voteCount = 0;
-        for (const p of poll) {
-          if (p.includes(user_id)) {
-            ++voteCount;
+        if (0 !== Object.keys(poll).length) {
+          for (const p in poll) {
+            if (poll[p].includes(user_id)) {
+              ++voteCount;
+            }
           }
         }
 
@@ -361,7 +362,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
           voteCount -= 1;
         }
 
-        if (voteCount >= value.limit) {
+        if (voteCount > value.limit) {
           release();
           return;
         }
@@ -415,8 +416,9 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         ts: message.ts,
         blocks: blocks,
       });
+    } finally {
       release();
-    });
+    }
 });
 
 app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) => {
