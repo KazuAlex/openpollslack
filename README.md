@@ -4,6 +4,10 @@ Welcome to the open source poll for slack.
 This repository is hosted on [GitLab](https://gitlab.com/KazuAlex/openpollslack). [Github repository](https://github.com/KazuAlex/openpollslack) is only a mirror.  
 But feel free to open new issues on both.  
 
+## Important update
+
+If you have an error when submitting poll, please use the "Add to slack" button [on site](https://openpoll.slack.alcor.space/) to re-authorize the bot on your workspace
+
 ## License
 
 The code is under GNU GPL license. So, you are free to modify the code and redistribute it under same license.  
