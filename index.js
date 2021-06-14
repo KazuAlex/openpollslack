@@ -124,6 +124,20 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
         type: 'section',
         text: {
           type: 'mrkdwn',
+          text: '*Hidden poll votes*',
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: "```\n/"+slackCommand+" hidden \"What's your favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"\n```",
+        },
+      },
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
           text: '*Limited choice poll*',
         },
       },
@@ -166,23 +180,28 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
     let isAnonymous = false;
     let isLimited = false;
     let limit = null;
-    let fetchLimit = false;
+    let isHidden = false;
+    let fetchArgs = true;
 
-    if (body.startsWith('anonymous')) {
-      isAnonymous = true;
-      body = body.substring(9).trim();
-    }
-    if (body.startsWith('limit')) {
-      body = body.substring(5).trim();
-      isLimited = true;
-      if (!isNaN(parseInt(body.charAt(0)))) {
-        limit = parseInt(body.substring(0, body.indexOf(' ')));
-        body = body.substring(body.indexOf(' ')).trim();
+    while (fetchArgs) {
+      fetchArgs = false;
+      if (body.startsWith('anonymous')) {
+        fetchArgs = true;
+        isAnonymous = true;
+        body = body.substring(9).trim();
+      } else if (body.startsWith('limit')) {
+        fetchArgs = true;
+        body = body.substring(5).trim();
+        isLimited = true;
+        if (!isNaN(parseInt(body.charAt(0)))) {
+          limit = parseInt(body.substring(0, body.indexOf(' ')));
+          body = body.substring(body.indexOf(' ')).trim();
+        }
+      } else if (body.startsWith('hidden')) {
+        fetchArgs = true;
+        body = body.substring(6).trim();
+        isHidden = true;
       }
-    }
-    if (!isAnonymous && body.startsWith('anonymous')) {
-      isAnonymous = true;
-      body = body.substring(9).trim();
     }
 
     const lastSep = body.split('').pop();
@@ -202,7 +221,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
       }
     }
 
-    const blocks = createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd);
+    const blocks = createPollView(question, options, isAnonymous, isLimited, limit, isHidden, userId, cmd);
 
     if (null === blocks) {
       return;
@@ -287,7 +306,7 @@ app.action('btn_add_choice', async ({ action, ack, body, client, context }) => {
   });
 });
 
-app.action('btn_delete', async ({ action, ack, body, context, respond }) => {
+app.action('btn_delete', async ({ action, ack, body, context }) => {
   await ack();
 
   if (
@@ -321,6 +340,123 @@ app.action('btn_delete', async ({ action, ack, body, context, respond }) => {
     token: context.botToken,
     channel: body.channel.id,
     ts: body.message.ts,
+  });
+});
+
+app.action('btn_reveal', async ({ action, ack, body, context }) => {
+  await ack();
+
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.message.blocks
+    || !body.channel
+    || !body.channel.id
+    || !action
+    || !action.value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  let value = JSON.parse(action.value);
+
+  if (body.user.id !== value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't reveal poll from another user.",
+    });
+    return;
+  }
+
+  if (value.hasOwnProperty('revealed') && value.revealed) {
+    console.log('poll already revealed');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "This poll is already revealed.",
+    });
+    return;
+  }
+
+  let message = body.message;
+  let channel = body.channel.id;
+  let blocks = message.blocks;
+  poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+
+  for (const i in blocks) {
+    let b = blocks[i];
+    if (
+      b.hasOwnProperty('accessory')
+      && b.accessory.hasOwnProperty('value')
+    ) {
+      let val = JSON.parse(b.accessory.value);
+      if (!val.hasOwnProperty('voters')) {
+        val.voters = [];
+      }
+
+      val.voters = poll[val.id];
+      let newVoters = '';
+
+      if (poll[val.id].length === 0) {
+        newVoters = 'No votes';
+      } else {
+        newVoters = '';
+        for (const voter of poll[val.id]) {
+          if (!val.anonymous) {
+            newVoters += '<@'+voter+'> ';
+          }
+        }
+
+        newVoters += poll[val.id].length +' ';
+        if (poll[val.id].length === 1) {
+          newVoters += 'vote';
+        } else {
+          newVoters += 'votes';
+        }
+      }
+
+      blocks[i].accessory.value = JSON.stringify(val);
+      const nextI = ''+(parseInt(i)+1);
+      if (blocks[nextI].hasOwnProperty('elements')) {
+        blocks[nextI].elements[0].text = newVoters;
+      }
+    }
+  }
+
+  let b = blocks[blocks.length - 1];
+
+  if (
+    b.hasOwnProperty('elements')
+    && b.elements.length > 0
+  ) {
+    let elements = [];
+    for (const i in b.elements) {
+      let el = b.elements[i];
+      if ('btn_reveal' !== el.action_id) {
+        elements.push(el);
+      }
+    }
+
+    b.elements = elements;
+  }
+
+  blocks[blocks.length - 1] = b;
+
+  await app.client.chat.update({
+    token: context.botToken,
+    channel: channel,
+    ts: message.ts,
+    blocks: blocks,
   });
 });
 
@@ -426,7 +562,9 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
           val.voters = poll[val.id];
           let newVoters = '';
 
-          if (poll[val.id].length === 0) {
+          if (val.hasOwnProperty('hidden') && val.hidden) {
+            newVoters = 'Wait for reveal';
+          } else if (poll[val.id].length === 0) {
             newVoters = 'No votes';
           } else {
             newVoters = '';
@@ -475,6 +613,7 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) 
     const privateMetadata = {
       anonymous: false,
       limited: false,
+      hidden: false,
       channel: null,
     };
 
@@ -564,6 +703,17 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) 
                     text: '*This option limit the number of choices by user*'
                   },
                   value: 'limit'
+                },
+                {
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*Hidden*'
+                  },
+                  description: {
+                    type: 'mrkdwn',
+                    text: '*This option hide the votes until reveal*'
+                  },
+                  value: 'hidden'
                 }
               ]
             }
@@ -685,6 +835,7 @@ app.action('modal_poll_options', async ({ action, ack, body, client, context }) 
   // let privateMetadata = {
   //   anonymous: false,
   //   limited: false,
+  //   hidden: false,
   // };
 
   privateMetadata.anonymous = false;
@@ -694,6 +845,8 @@ app.action('modal_poll_options', async ({ action, ack, body, client, context }) 
       privateMetadata.anonymous = true;
     } else if ('limit' === option.value) {
       privateMetadata.limited = true;
+    } else if ('hidden' === option.value) {
+      privateMetadata.hidden = true;
     }
   }
 
@@ -740,6 +893,7 @@ app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
   const isAnonymous = privateMetadata.anonymous;
   const isLimited = privateMetadata.limited;
   let limit = 1;
+  const isHidden = privateMetadata.hidden;
   const channel = privateMetadata.channel;
 
   if (state.values) {
@@ -762,9 +916,9 @@ app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
     return;
   }
 
-  const cmd = createCmdFromInfos(question, options, isAnonymous, isLimited, limit);
+  const cmd = createCmdFromInfos(question, options, isAnonymous, isLimited, limit, isHidden);
 
-  const blocks = createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd);
+  const blocks = createPollView(question, options, isAnonymous, isLimited, limit, isHidden, userId, cmd);
 
   await app.client.chat.postMessage({
     token: context.botToken,
@@ -773,7 +927,7 @@ app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
   });
 });
 
-function createCmdFromInfos(question, options, isAnonymous, isLimited, limit) {
+function createCmdFromInfos(question, options, isAnonymous, isLimited, limit, isHidden) {
   let cmd = `/${slackCommand}`;
   if (isAnonymous) {
     cmd += ` anonymous`
@@ -783,6 +937,9 @@ function createCmdFromInfos(question, options, isAnonymous, isLimited, limit) {
   }
   if (limit > 1) {
     cmd += ` ${limit}`
+  }
+  if (isHidden) {
+    cmd += ` hidden`
   }
 
   question = question.replace(/"/g, "\\\"");
@@ -796,7 +953,7 @@ function createCmdFromInfos(question, options, isAnonymous, isLimited, limit) {
   return cmd;
 }
 
-function createPollView(question, options, isAnonymous, isLimited, limit, userId, cmd) {
+function createPollView(question, options, isAnonymous, isLimited, limit, isHidden, userId, cmd) {
   if (
     !question
     || !options
@@ -818,7 +975,7 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
   let voteLimit = 0;
 
   let elements = [];
-  if (isAnonymous || isLimited) {
+  if (isAnonymous || isLimited || isHidden) {
     if (isAnonymous) {
       elements.push({
         type: 'mrkdwn',
@@ -831,10 +988,16 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
         text: ':warning: Limited to '+ limit + ' vote' +(limit > 1 ? 's': ''),
       });
     }
+    if (isHidden) {
+      elements.push({
+        type: 'mrkdwn',
+        text: ':ninja: Votes are hidden'
+      });
+    }
   }
   elements.push({
     type: 'mrkdwn',
-    text: ':eyes: by <@'+userId+'>'
+    text: ':writing_hand: by <@'+userId+'>'
   });
   blocks.push({
     type: 'context',
@@ -848,6 +1011,7 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
     anonymous: isAnonymous,
     limited: isLimited,
     limit: limit,
+    hidden: isHidden,
     voters: [],
     id: null,
   };
@@ -879,7 +1043,7 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
       elements: [
         {
           type: 'mrkdwn',
-          text: 'No votes',
+          text: isHidden ? 'Wait for reveal' : 'No votes',
         }
       ],
     };
@@ -904,31 +1068,57 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
     ],
   });
 
-  blocks.push({
-    "type": "actions",
-    "elements": [
-      {
-        "type": "button",
+  elements = [];
+
+  if (isHidden) {
+    elements.push({
+      "type": "button",
+      "text": {
+        "type": "plain_text",
+        "text": ":eyes: Reveal votes",
+        "emoji": true
+      },
+      "value": JSON.stringify({revealed: false, user: userId}),//`${userId}`,
+      "action_id": "btn_reveal",
+      "style": "primary",
+      "confirm": {
+        "title": {
+          "type": "plain_text",
+          "text": "Are you sure?"
+        },
         "text": {
           "type": "plain_text",
-          "text": ":wastebasket: Remove",
-          "emoji": true
-        },
-        "value": `${userId}`,
-        "action_id": "btn_delete",
-        "style": "danger",
-        "confirm": {
-          "title": {
-            "type": "plain_text",
-            "text": "Are you sure?"
-          },
-          "text": {
-            "type": "plain_text",
-            "text": "Deleted poll are not recoverable.\nOnly the creator can delete it."
-          }
+          "text": "Revealing votes can't be undone.\nOnly the creator can reaveal the votes."
         }
       }
-    ]
+    });
+  }
+
+  elements.push({
+    "type": "button",
+    "text": {
+      "type": "plain_text",
+      "text": ":wastebasket: Remove",
+      "emoji": true
+    },
+    "value": `${userId}`,
+    "action_id": "btn_delete",
+    "style": "danger",
+    "confirm": {
+      "title": {
+        "type": "plain_text",
+        "text": "Are you sure?"
+      },
+      "text": {
+        "type": "plain_text",
+        "text": "Deleted poll are not recoverable.\nOnly the creator can delete it."
+      }
+    }
+  });
+
+  blocks.push({
+    "type": "actions",
+    "elements": elements,
   });
 
   return blocks;
