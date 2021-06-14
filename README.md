@@ -32,6 +32,10 @@ Remember the four freedoms of the GPL :
 ```
 /poll limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
 ```
+### Hidden poll votes
+```
+/poll hidden "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
+```
 ### Anonymous limited choice poll
 ```
 /poll anonymous limit 2 "What's your favourite color ?" "Red" "Green" "Blue" "Yellow"
