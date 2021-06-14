@@ -287,6 +287,43 @@ app.action('btn_add_choice', async ({ action, ack, body, client, context }) => {
   });
 });
 
+app.action('btn_delete', async ({ action, ack, body, context, respond }) => {
+  await ack();
+
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.channel
+    || !body.channel.id
+    || !action
+    || !action.value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id != action.value) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't delete poll from another user.",
+    });
+    return;
+  }
+
+  await app.client.chat.delete({
+    token: context.botToken,
+    channel: body.channel.id,
+    ts: body.message.ts,
+  });
+});
+
 app.action('btn_vote', async ({ action, ack, body, context }) => {
   await ack();
 
@@ -364,6 +401,13 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
 
         if (voteCount > value.limit) {
           release();
+          await app.client.chat.postEphemeral({
+            token: context.botToken,
+            channel: channel,
+            user: body.user.id,
+            attachments: [],
+            text: "You can't vote anymore. Remove a vote to choose another option."
+          });
           return;
         }
       }
@@ -858,6 +902,33 @@ function createPollView(question, options, isAnonymous, isLimited, limit, userId
         text: ':information_source: '+cmd,
       }
     ],
+  });
+
+  blocks.push({
+    "type": "actions",
+    "elements": [
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": ":wastebasket: Remove",
+          "emoji": true
+        },
+        "value": `${userId}`,
+        "action_id": "btn_delete",
+        "style": "danger",
+        "confirm": {
+          "title": {
+            "type": "plain_text",
+            "text": "Are you sure?"
+          },
+          "text": {
+            "type": "plain_text",
+            "text": "Deleted poll are not recoverable.\nOnly the creator can delete it."
+          }
+        }
+      }
+    ]
   });
 
   return blocks;
