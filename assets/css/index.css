@@ -109,3 +109,14 @@ body {
   font-size: 40px;
   cursor: pointer;
 }
+
+#buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+#buttons a:first-child {
+  margin-bottom: 20px;
+}
