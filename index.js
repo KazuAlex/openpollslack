@@ -69,6 +69,238 @@ const app = new App({
   logLevel: LogLevel.DEBUG,
 });
 
+app.event('app_home_opened', async ({ event, client, context }) => {
+  try {
+    const result = await client.views.publish({
+      user_id: event.user,
+      view: {
+        type: "home",
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "Hello, here is how to create a poll with OpenPoll.",
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Create poll",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*From command*\nJust typing `/poll` where you type the message, following with options (see below) and your choices surrounding by quotes.\nBe careful, this way open the shortcuts. But you just need to ignore it and continue typing options and choices.",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*From shortcuts*\nOpen shortcuts (lightning bolt below to message input, or just type `/` into message input) and type \"poll\"",
+            },
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Delete poll",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "When you create a poll, a red button will appear at bottom of your poll.\nOnly the creator can delete a poll.",
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Options",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "The options are optionals settings to apply to the poll.\nDon't surround options with quotes.",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Anonymous*\n`anonymous` inside command.\nThis option allow you to hide voters.",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Limited choices*\n`limit x` inside command. Replace \"x\" by desired number.\nThis option limit maximum choice for each users. If \"2\", each user can only select 2 choices.",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Hidden*\n`hidden` inside command.\nThis option hide the number of votes for each choice. You can reveal votes with a button at bottom of poll. Only the creator can reveal votes.",
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Examples",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Simple poll*\nThis example will create a basic poll.",
+            },
+          },
+          {
+            type: "input",
+            element: {
+              type: "plain_text_input",
+              initial_value: "/poll \"What's you favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\""
+            },
+            label: {
+              type: "plain_text",
+              text: " ",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Anonymous poll*\nThis example will create anonymous poll.",
+            },
+          },
+          {
+            type: "input",
+            element: {
+              type: "plain_text_input",
+              initial_value: "/poll anonymous \"What's you favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"",
+            },
+            label: {
+              type: "plain_text",
+              text: " ",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Limited poll*\nThis example will create anonymous poll.",
+            },
+          },
+          {
+            type: "input",
+            element: {
+              type: "plain_text_input",
+              initial_value: "/poll limit 2 \"What's you favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"",
+            },
+            label: {
+              type: "plain_text",
+              text: " ",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Hidden poll*\nThis example will create hidden poll and allow you to reveal votes.",
+            },
+          },
+          {
+            type: "input",
+            element: {
+              type: "plain_text_input",
+              initial_value: "/poll hidden \"What's you favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"",
+            },
+            label: {
+              type: "plain_text",
+              text: " ",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Mixed options poll*\nThis example will create anonymous and limited poll.",
+            },
+          },
+          {
+            type: "input",
+            element: {
+              type: "plain_text_input",
+              initial_value: "/poll anonymous limit 2 \"What's you favourite color ?\" \"Red\" \"Green\" \"Blue\" \"Yellow\"",
+            },
+            label: {
+              type: "plain_text",
+              text: " ",
+              emoji: true,
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Tips",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Private channel*\nTo create poll in private channels, you need to invite the bot inside with `/invite` command.",
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "*Private messages*\nTo create poll in private messages, you need to invite the bot inside with `/invite` command.",
+            },
+          },
+        ],
+      },
+    });
+  } catch (error) {
+    console.error(error);
+  }
+});
+
 app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
   await ack();
 
