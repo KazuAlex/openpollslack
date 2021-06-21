@@ -538,6 +538,82 @@ app.action('btn_add_choice', async ({ action, ack, body, client, context }) => {
   });
 });
 
+app.action('btn_my_votes', async ({ action, ack, body, client, context, shortcut }) => {
+  await ack();
+
+  if (
+    !body.hasOwnProperty('user')
+    || !body.user.hasOwnProperty('id')
+  ) {
+    return;
+  }
+
+  const blocks = body.message.blocks;
+  let votes = [];
+  const userId = body.user.id;
+
+  for (const block of blocks) {
+    if (
+      'section' !== block.type
+      || !block.hasOwnProperty('accessory')
+      || !block.accessory.hasOwnProperty('action_id')
+      || 'btn_vote' !== block.accessory.action_id
+      || !block.accessory.hasOwnProperty('value')
+      || !block.hasOwnProperty('text')
+      || !block.text.hasOwnProperty('text')
+    ) {
+      continue;
+    }
+    const value = JSON.parse(block.accessory.value);
+
+    if (value.voters.includes(userId)) {
+      votes.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: block.text.text,
+        },
+      });
+      votes.push({
+        type: 'divider',
+      });
+    }
+  }
+
+  if (0 === votes.length) {
+    votes.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: 'You have not voted yet',
+      },
+    });
+  } else {
+    votes.pop();
+  }
+
+  try {
+    await client.views.open({
+      token: context.botToken,
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        title: {
+          type: 'plain_text',
+          text: 'Your votes',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Close',
+        },
+        blocks: votes,
+      }
+    });
+  } catch (e) {
+    console.error(e);
+  }
+});
+
 app.action('btn_delete', async ({ action, ack, body, context }) => {
   await ack();
 
@@ -835,7 +911,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
     }
 });
 
-app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) => {
+app.shortcut('open_modal_new', async ({ shortcut, ack, context, client }) => {
   try {
     await ack();
 
@@ -891,12 +967,21 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client, lody }) 
             block_id: 'channel',
             elements: [
               {
-                type: 'channels_select',
+                type: 'conversations_select',
                 action_id: 'modal_poll_channel',
                 placeholder: {
                   type: 'plain_text',
                   text: 'Select a channel',
                 },
+              },
+            ],
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: ':warning: Some of channels may not be visible to the bot. This may result by impossibility to create the poll.',
               },
             ],
           },
@@ -1304,48 +1389,59 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 
   if (isHidden) {
     elements.push({
-      "type": "button",
-      "text": {
-        "type": "plain_text",
-        "text": ":eyes: Reveal votes",
-        "emoji": true
+      type: "button",
+      text: {
+        type: "plain_text",
+        text: ":eyes: Reveal votes",
+        emoji: true
       },
-      "value": JSON.stringify({revealed: false, user: userId}),//`${userId}`,
-      "action_id": "btn_reveal",
-      "style": "primary",
-      "confirm": {
-        "title": {
-          "type": "plain_text",
-          "text": "Are you sure?"
+      value: JSON.stringify({revealed: false, user: userId}),
+      action_id: "btn_reveal",
+      style: "primary",
+      confirm: {
+        title: {
+          type: "plain_text",
+          text: "Are you sure?"
         },
-        "text": {
-          "type": "plain_text",
-          "text": "Revealing votes can't be undone.\nOnly the creator can reaveal the votes."
+        text: {
+          type: "plain_text",
+          text: "Revealing votes can't be undone.\nOnly the creator can reaveal the votes."
         }
       }
     });
   }
 
   elements.push({
-    "type": "button",
-    "text": {
-      "type": "plain_text",
-      "text": ":wastebasket: Remove",
-      "emoji": true
+    type: "button",
+    text: {
+      type: "plain_text",
+      text: ":wastebasket: Remove",
+      emoji: true
     },
-    "value": `${userId}`,
-    "action_id": "btn_delete",
-    "style": "danger",
-    "confirm": {
-      "title": {
-        "type": "plain_text",
-        "text": "Are you sure?"
+    value: `${userId}`,
+    action_id: "btn_delete",
+    style: "danger",
+    confirm: {
+      title: {
+        type: "plain_text",
+        text: "Are you sure?"
       },
-      "text": {
-        "type": "plain_text",
-        "text": "Deleted poll are not recoverable.\nOnly the creator can delete it."
+      text: {
+        type: "plain_text",
+        text: "Deleted poll are not recoverable.\nOnly the creator can delete it."
       }
     }
+  });
+
+  elements.push({
+    type: "button",
+    text: {
+      type: "plain_text",
+      text: ":ballot_box_with_ballot: My votes",
+      emoji: true,
+    },
+    value: "btn_my_votes",
+    action_id: "btn_my_votes",
   });
 
   blocks.push({
