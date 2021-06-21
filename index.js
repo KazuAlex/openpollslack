@@ -463,6 +463,7 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
       token: context.botToken,
       channel: channel,
       blocks: blocks,
+      text: `Poll : ${question}`,
     });
   }
 });
