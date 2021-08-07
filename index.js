@@ -709,6 +709,8 @@ app.action('btn_reveal', async ({ action, ack, body, context }) => {
       && b.accessory.hasOwnProperty('value')
     ) {
       let val = JSON.parse(b.accessory.value);
+      val.hidden = false;
+
       if (!val.hasOwnProperty('voters')) {
         val.voters = [];
       }
