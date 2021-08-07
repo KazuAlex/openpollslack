@@ -1366,11 +1366,10 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
       ],
     };
     blocks.push(block);
+    blocks.push({
+      type: 'divider',
+    });
   }
-
-  blocks.push({
-    type: 'divider',
-  });
 
   blocks.push({
     type: 'context',
