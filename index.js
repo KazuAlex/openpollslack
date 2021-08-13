@@ -1119,7 +1119,7 @@ app.action('modal_poll_channel', async ({ action, ack, body, client, context }) 
   }
 
   const privateMetadata = JSON.parse(body.view.private_metadata);
-  privateMetadata.channel = action.selected_channel;
+  privateMetadata.channel = action.selected_channel || action.selected_conversation;
 
   const view = {
     type: body.view.type,
