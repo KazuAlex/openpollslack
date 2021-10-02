@@ -459,12 +459,21 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
       return;
     }
 
-    await app.client.chat.postMessage({
-      token: context.botToken,
-      channel: channel,
-      blocks: blocks,
-      text: `Poll : ${question}`,
-    });
+    try {
+      await app.client.chat.postMessage({
+        token: context.botToken,
+        channel: channel,
+        blocks: blocks,
+        text: `Poll : ${question}`,
+      });
+    } catch (e) {
+      if (
+        e && e.data && e.data && e.data.error
+        && 'channel_not_found' === e.data.error
+      ) {
+        console.error('Channel not found error : ignored')
+      }
+    }
   }
 });
 
@@ -1240,11 +1249,21 @@ app.view('modal_poll_submit', async ({ ack, body, view, context }) => {
 
   const blocks = createPollView(question, options, isAnonymous, isLimited, limit, isHidden, userId, cmd);
 
-  await app.client.chat.postMessage({
-    token: context.botToken,
-    channel: channel,
-    blocks: blocks,
-  });
+  try {
+    await app.client.chat.postMessage({
+      token: context.botToken,
+      channel: channel,
+      blocks: blocks,
+      text: `Poll : ${question}`,
+    });
+  } catch (e) {
+    if (
+      e && e.data && e.data && e.data.error
+      && 'channel_not_found' === e.data.error
+    ) {
+      console.error('Channel not found error : ignored')
+    }
+  }
 });
 
 function createCmdFromInfos(question, options, isAnonymous, isLimited, limit, isHidden) {
