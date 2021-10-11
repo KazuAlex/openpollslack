@@ -493,6 +493,10 @@ const modalBlockInput = {
 };
 
 (async () => {
+  app.receiver.router.get('/ping', (req, res) => {
+    res.status(200).send('pong');
+  });
+
   await app.start(process.env.PORT || port);
 
   console.log('Bolt app is running!');
