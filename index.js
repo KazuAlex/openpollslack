@@ -293,6 +293,24 @@ app.event('app_home_opened', async ({ event, client, context }) => {
               text: "*Private messages*\nTo create poll in private messages, you need to invite the bot inside with `/invite` command.",
             },
           },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: "Limitations",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "Slack have limitations and that include \"message length\". So you can't have more than 15 options per poll. You can create multiple polls if you want more options",
+            },
+          },
         ],
       },
     });
