@@ -590,7 +590,7 @@ app.action('btn_add_choice', async ({ action, ack, body, client, context }) => {
   });
 });
 
-app.action('btn_my_votes', async ({ action, ack, body, client, context, shortcut }) => {
+app.action('btn_my_votes', async ({ ack, body, client, context }) => {
   await ack();
 
   if (
@@ -1343,11 +1343,47 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 
   const blocks = [];
 
+  const overflowMenuElements = [];
+
+  if (isHidden) {
+    overflowMenuElements.push({
+      text: {
+        type: "plain_text",
+        text: ":eyes: Reveal the votes",
+        emoji: true,
+      },
+      value: JSON.stringify({action: 'btn_reveal', revealed: false, user: userId}),
+    });
+  }
+
+  overflowMenuElements.push({
+    text: {
+      type: "plain_text",
+      text: ":wastebasket: Remove the poll",
+      emoji: true,
+    },
+    value: JSON.stringify({action: 'btn_delete', user: userId}),
+  });
+
+  overflowMenuElements.push({
+    text: {
+      type: "plain_text",
+      text: ":ballot_box_with_ballot: See your votes",
+      emoji: true,
+    },
+    value: JSON.stringify({action: 'btn_my_votes', user: userId}),
+  });
+
   blocks.push({
     type: 'section',
     text: {
       type: 'mrkdwn',
       text: question,
+    },
+    accessory: {
+      type: 'overflow',
+      options: overflowMenuElements,
+      action_id: 'overflow_menu',
     },
   });
 
@@ -1446,69 +1482,255 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
     ],
   });
 
-  elements = [];
+  return blocks;
+}
 
-  if (isHidden) {
-    elements.push({
-      type: "button",
-      text: {
-        type: "plain_text",
-        text: ":eyes: Reveal votes",
-        emoji: true
-      },
-      value: JSON.stringify({revealed: false, user: userId}),
-      action_id: "btn_reveal",
-      style: "primary",
-      confirm: {
-        title: {
-          type: "plain_text",
-          text: "Are you sure?"
-        },
-        text: {
-          type: "plain_text",
-          text: "Revealing votes can't be undone.\nOnly the creator can reaveal the votes."
-        }
-      }
-    });
+// btn actions
+app.action('overflow_menu', async ({ack, action, body, client, context}) => {
+  await ack();
+
+  if (
+    !action
+    || !action.selected_option
+    || !action.selected_option.value
+  ) {
+    return;
   }
 
-  elements.push({
-    type: "button",
-    text: {
-      type: "plain_text",
-      text: ":wastebasket: Remove",
-      emoji: true
-    },
-    value: `${userId}`,
-    action_id: "btn_delete",
-    style: "danger",
-    confirm: {
-      title: {
-        type: "plain_text",
-        text: "Are you sure?"
-      },
+  const value = JSON.parse(action.selected_option.value);
+
+  if (!value || !value.action || !value.user) {
+    return;
+  }
+
+  if ('btn_my_votes' === value.action)
+    myVotes(body, client, context);
+  else if ('btn_reveal' === value.action)
+    revealVotes(body, context, value);
+  else if ('btn_delete' === value.action)
+    deletePoll(body, context, value);
+})
+
+async function myVotes(body, client, context) {
+  if (
+    !body.hasOwnProperty('user')
+    || !body.user.hasOwnProperty('id')
+  ) {
+    return;
+  }
+
+  const blocks = body.message.blocks;
+  let votes = [];
+  const userId = body.user.id;
+
+  for (const block of blocks) {
+    if (
+      'section' !== block.type
+      || !block.hasOwnProperty('accessory')
+      || !block.accessory.hasOwnProperty('action_id')
+      || 'btn_vote' !== block.accessory.action_id
+      || !block.accessory.hasOwnProperty('value')
+      || !block.hasOwnProperty('text')
+      || !block.text.hasOwnProperty('text')
+    ) {
+      continue;
+    }
+    const value = JSON.parse(block.accessory.value);
+
+    if (value.voters.includes(userId)) {
+      votes.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: block.text.text,
+        },
+      });
+      votes.push({
+        type: 'divider',
+      });
+    }
+  }
+
+  if (0 === votes.length) {
+    votes.push({
+      type: 'section',
       text: {
-        type: "plain_text",
-        text: "Deleted poll are not recoverable.\nOnly the creator can delete it."
+        type: 'mrkdwn',
+        text: 'You have not voted yet',
+      },
+    });
+  } else {
+    votes.pop();
+  }
+
+  try {
+    await client.views.open({
+      token: context.botToken,
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        title: {
+          type: 'plain_text',
+          text: 'Your votes',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Close',
+        },
+        blocks: votes,
+      }
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function revealVotes(body, context, value) {
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.message.blocks
+    || !body.channel
+    || !body.channel.id
+    || !value
+    || !body.message.blocks[0]
+    || !body.message.blocks[0].accessory
+    || !body.message.blocks[0].accessory.options
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id !== value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't reveal poll from another user.",
+    });
+    return;
+  }
+
+  if (value.hasOwnProperty('revealed') && value.revealed) {
+    console.log('poll already revealed');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "This poll is already revealed.",
+    });
+    return;
+  }
+
+  let message = body.message;
+  let channel = body.channel.id;
+  let blocks = message.blocks;
+  try {
+    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+  } catch (e) {
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "Nobody has voted yet.",
+    });
+    return;
+  }
+
+  for (const i in blocks) {
+    let b = blocks[i];
+    if (
+      b.hasOwnProperty('accessory')
+      && b.accessory.hasOwnProperty('value')
+    ) {
+      let val = JSON.parse(b.accessory.value);
+      val.hidden = false;
+
+      if (!val.hasOwnProperty('voters')) {
+        val.voters = [];
+      }
+
+      val.voters = poll[val.id];
+      let newVoters = '';
+
+      if (poll[val.id].length === 0) {
+        newVoters = 'No votes';
+      } else {
+        newVoters = '';
+        for (const voter of poll[val.id]) {
+          if (!val.anonymous) {
+            newVoters += '<@'+voter+'> ';
+          }
+        }
+
+        newVoters += poll[val.id].length +' ';
+        if (poll[val.id].length === 1) {
+          newVoters += 'vote';
+        } else {
+          newVoters += 'votes';
+        }
+      }
+
+      blocks[i].accessory.value = JSON.stringify(val);
+      const nextI = ''+(parseInt(i)+1);
+      if (blocks[nextI].hasOwnProperty('elements')) {
+        blocks[nextI].elements[0].text = newVoters;
       }
     }
-  });
+  }
 
-  elements.push({
-    type: "button",
-    text: {
-      type: "plain_text",
-      text: ":ballot_box_with_ballot: My votes",
-      emoji: true,
-    },
-    value: "btn_my_votes",
-    action_id: "btn_my_votes",
-  });
+  // remove reveal button
+  const overflowMenu = blocks[0].accessory.options;
+  blocks[0].accessory.options = overflowMenu.filter((el) => {
+    return el.value
+      && 'btn_reveal' !== JSON.parse(el.value).action;
+  })
 
-  blocks.push({
-    "type": "actions",
-    "elements": elements,
+  await app.client.chat.update({
+    token: context.botToken,
+    channel: channel,
+    ts: message.ts,
+    blocks: blocks,
   });
+}
 
-  return blocks;
+async function deletePoll(body, context, value) {
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.channel
+    || !body.channel.id
+    || !value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id != value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't delete poll from another user.",
+    });
+    return;
+  }
+
+  await app.client.chat.delete({
+    token: context.botToken,
+    channel: body.channel.id,
+    ts: body.message.ts,
+  });
 }
