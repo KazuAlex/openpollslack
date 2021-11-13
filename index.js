@@ -300,6 +300,24 @@ app.event('app_home_opened', async ({ event, client, context }) => {
             type: "header",
             text: {
               type: "plain_text",
+              text: "Recurring poll",
+              emoji: true,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: "Slack has a feature called \"Workflow\" that allow you to create recurring poll. Check at <https://slack.com/slack-tips/speed-up-poll-creation-with-simple-poll|this example> from slack. But it require a paid plan.",
+            },
+          },
+          {
+            type: "divider",
+          },
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
               text: "Limitations",
               emoji: true,
             },

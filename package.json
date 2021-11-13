@@ -1,6 +1,6 @@
 {
   "name": "openpoll",
-  "version": "2.5.7",
+  "version": "2.5.8",
   "description": "Open source poll slack app",
   "main": "index.js",
   "scripts": {
