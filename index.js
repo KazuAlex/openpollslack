@@ -319,12 +319,12 @@ app.event('app_home_opened', async ({ event, client, context }) => {
   }
 });
 
-app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
+app.command(`/${slackCommand}`, async ({ ack, body, client, command, context, say }) => {
   await ack();
 
-  let body = (command && command.text) ? command.text.trim() : null;
+  let cmdBody = (command && command.text) ? command.text.trim() : null;
 
-  const isHelp = body ? 'help' === body : false;
+  const isHelp = cmdBody ? 'help' === cmdBody : false;
 
   const channel = (command && command.channel_id) ? command.channel_id : null;
 
@@ -422,8 +422,10 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
     });
 
     return;
+  } else if (!cmdBody) {
+    createModal(context, client, body.trigger_id);
   } else {
-    const cmd = `/${slackCommand} ${body}`;
+    const cmd = `/${slackCommand} ${cmdBody}`;
     let question = null;
     const options = [];
 
@@ -435,34 +437,34 @@ app.command(`/${slackCommand}`, async ({ command, ack, say, context }) => {
 
     while (fetchArgs) {
       fetchArgs = false;
-      if (body.startsWith('anonymous')) {
+      if (cmdBody.startsWith('anonymous')) {
         fetchArgs = true;
         isAnonymous = true;
-        body = body.substring(9).trim();
-      } else if (body.startsWith('limit')) {
+        cmdBody = cmdBody.substring(9).trim();
+      } else if (cmdBody.startsWith('limit')) {
         fetchArgs = true;
-        body = body.substring(5).trim();
+        cmdBody = cmdBody.substring(5).trim();
         isLimited = true;
-        if (!isNaN(parseInt(body.charAt(0)))) {
-          limit = parseInt(body.substring(0, body.indexOf(' ')));
-          body = body.substring(body.indexOf(' ')).trim();
+        if (!isNaN(parseInt(cmdBody.charAt(0)))) {
+          limit = parseInt(cmdBody.substring(0, cmdBody.indexOf(' ')));
+          cmdBody = cmdBody.substring(cmdBody.indexOf(' ')).trim();
         }
-      } else if (body.startsWith('hidden')) {
+      } else if (cmdBody.startsWith('hidden')) {
         fetchArgs = true;
-        body = body.substring(6).trim();
+        cmdBody = cmdBody.substring(6).trim();
         isHidden = true;
       }
     }
 
-    const lastSep = body.split('').pop();
-    const firstSep = body.charAt(0);
+    const lastSep = cmdBody.split('').pop();
+    const firstSep = cmdBody.charAt(0);
 
     if (isLimited && null === limit) {
       limit = 1;
     }
 
     const regexp = new RegExp(firstSep+'[^'+firstSep+'\\\\]*(?:\\\\[\S\s][^'+lastSep+'\\\\]*)*'+lastSep, 'g');
-    for (let option of body.match(regexp)) {
+    for (let option of cmdBody.match(regexp)) {
       let opt = option.substring(1, option.length - 1);
       if (question === null) {
         question = opt;
@@ -946,9 +948,12 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
 });
 
 app.shortcut('open_modal_new', async ({ shortcut, ack, context, client }) => {
-  try {
-    await ack();
+  await ack();
+  createModal(context, client, shortcut.trigger_id);
+});
 
+async function createModal(context, client, trigger_id) {
+  try {
     let tempModalBlockInput = JSON.parse(JSON.stringify(modalBlockInput));
     tempModalBlockInput.block_id = 'choice_0';
 
@@ -961,7 +966,7 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client }) => {
 
     const result = await client.views.open({
       token: context.botToken,
-      trigger_id: shortcut.trigger_id,
+      trigger_id: trigger_id,
       view: {
         type: 'modal',
         callback_id: 'modal_poll_submit',
@@ -1137,7 +1142,7 @@ app.shortcut('open_modal_new', async ({ shortcut, ack, context, client }) => {
   } catch (error) {
     console.error(error);
   }
-});
+}
 
 app.action('modal_poll_channel', async ({ action, ack, body, client, context }) => {
   await ack();
@@ -1183,11 +1188,6 @@ app.action('modal_poll_options', async ({ action, ack, body, client, context }) 
   }
 
   const privateMetadata = JSON.parse(body.view.private_metadata);
-  // let privateMetadata = {
-  //   anonymous: false,
-  //   limited: false,
-  //   hidden: false,
-  // };
 
   privateMetadata.anonymous = false;
   privateMetadata.limited = false;
