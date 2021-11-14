@@ -1,4 +1,4 @@
-const { App, LogLevel } = require('@slack/bolt');
+const { App, ExpressReceiver, LogLevel } = require('@slack/bolt');
 const config = require('config');
 
 const { JsonDB } = require('node-json-db');
@@ -19,7 +19,7 @@ const mutexes = {};
 orgDb.push('/token', {}, false);
 pollsDb.push('/polls', {}, false);
 
-const app = new App({
+const receiver = new ExpressReceiver({
   signingSecret: signing_secret,
   clientId: config.get('client_id'),
   clientSecret: config.get('client_secret'),
@@ -67,6 +67,14 @@ const app = new App({
     },
   },
   logLevel: LogLevel.DEBUG,
+});
+
+receiver.router.get('/ping', (req, res) => {
+  res.status(200).send('pong');
+})
+
+const app = new App({
+  receiver: receiver,
 });
 
 app.event('app_home_opened', async ({ event, client, context }) => {
@@ -531,10 +539,6 @@ const modalBlockInput = {
 };
 
 (async () => {
-  app.receiver.router.get('/ping', (req, res) => {
-    res.status(200).send('pong');
-  });
-
   await app.start(process.env.PORT || port);
 
   console.log('Bolt app is running!');
