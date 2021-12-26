@@ -10,6 +10,7 @@ const port = config.get('port');
 const signing_secret = config.get('signing_secret');
 const slackCommand = config.get('command');
 const helpLink = config.get('help_link');
+const supportUrl = config.get('support_url');
 
 const orgDb = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
 const pollsDb = new JsonDB(new JsonDBConfig('config/polls', true, false, '/'));
@@ -1347,38 +1348,58 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 
   const blocks = [];
 
-  const overflowMenuElements = [{
-    text: {
+  const staticSelectElements = [{
+    label: {
       type: 'plain_text',
-      text: isHidden ? ':eyes: Reveal the votes' : ':ninja: Hide votes',
-      emoji: true,
+      text: 'Poll actions',
     },
-    value:
-      JSON.stringify({action: 'btn_reveal', revealed: false, user: userId}),
-  }, {
-    text: {
-      type: 'plain_text',
-      text: ':wastebasket: Remove the poll',
-      emoji: true,
-    },
-    value: JSON.stringify({action: 'btn_delete', user: userId}),
-  }, {
-    text: {
-      type: 'plain_text',
-      text: ':ballot_box_with_ballot: See your votes',
-      emoji: true,
-    },
-    value: JSON.stringify({action: 'btn_my_votes', user: userId}),
-  }];
-
-  if (isHidden) {
-    overflowMenuElements.push({
+    options: [{
       text: {
         type: 'plain_text',
-        text: ':page_with_curl: See users votes',
-        emoji: true,
+        text: isHidden ? 'Reveal votes' : 'Hide votes',
+      },
+      value:
+        JSON.stringify({action: 'btn_reveal', revealed: !isHidden, user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'See users votes',
       },
       value: JSON.stringify({action: 'btn_users_votes', user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'Remove the poll',
+      },
+      value: JSON.stringify({action: 'btn_delete', user: userId}),
+    }],
+  }, {
+    label: {
+      type: 'plain_text',
+      text: 'User actions',
+    },
+    options: [{
+      text: {
+        type: 'plain_text',
+        text: 'See your votes',
+      },
+      value: JSON.stringify({action: 'btn_my_votes', user: userId}),
+    }],
+  }];
+
+  if (supportUrl) {
+    staticSelectElements.push({
+      label: {
+        type: 'plain_text',
+        text: 'Support',
+      },
+      options: [{
+        text: {
+          type: 'plain_text',
+          text: 'Love Open Poll ?',
+        },
+        value: JSON.stringify({action: 'btn_love_open_poll', user: userId}),
+      }],
     });
   }
 
@@ -1389,9 +1410,10 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
       text: question,
     },
     accessory: {
-      type: 'overflow',
-      options: overflowMenuElements,
-      action_id: 'overflow_menu',
+      type: 'static_select',
+      placeholder: { type: 'plain_text', text: 'Menu' },
+      action_id: 'static_select_menu',
+      option_groups: staticSelectElements,
     },
   });
 
@@ -1494,7 +1516,12 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 }
 
 // btn actions
-app.action('overflow_menu', async ({ack, action, body, client, context}) => {
+app.action('overflow_menu', btnActions);
+app.action('static_select_menu', btnActions);
+app.action('ignore_me', async ({ ack }) => { await ack() });
+
+async function btnActions(args) {
+  const {ack, action, body, client, context} = args;
   await ack();
 
   if (
@@ -1511,7 +1538,9 @@ app.action('overflow_menu', async ({ack, action, body, client, context}) => {
     return;
   }
 
-  if ('btn_my_votes' === value.action)
+  if ('btn_love_open_poll' === value.action)
+    supportAction(body, client, context)
+  else if ('btn_my_votes' === value.action)
     myVotes(body, client, context);
   else if ('btn_users_votes' === value.action)
     usersVotes(body, client, context, value);
@@ -1519,7 +1548,68 @@ app.action('overflow_menu', async ({ack, action, body, client, context}) => {
     revealOrHideVotes(body, context, value);
   else if ('btn_delete' === value.action)
     deletePoll(body, context, value);
-})
+}
+
+async function supportAction(body, client, context) {
+  if (
+    !body.user
+    || !body.user.id
+    || !body.channel
+    || !body.channel.id
+  ) {
+    return;
+  }
+
+  const blocks = [{
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':heart: You love the app ?',
+    },
+  },
+  { type: 'divider' },
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':technologist: Contribute on it',
+    },
+    accessory: {
+      type: 'button',
+      text: {
+        type: 'plain_text',
+        text: 'Open GitLab',
+      },
+      style: 'primary',
+      url: 'https://gitlab.com/KazuAlex/openpollslack',
+      action_id: 'ignore_me',
+    }
+  },
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':coffee: Buy me a coffee to help me to maintain servers or just thanks me',
+    },
+    accessory: {
+      type: 'button',
+      text: {
+        type: 'plain_text',
+        text: 'Buy a coffee',
+      },
+      url: 'https://www.buymeacoffee.com/kazualex',
+      action_id: 'ignore_me',
+    }
+  }];
+
+  await client.chat.postEphemeral({
+    token: context.botToken,
+    channel: body.channel.id,
+    user: body.user.id,
+    blocks,
+    text: 'Support Open Poll',
+  });
+}
 
 async function myVotes(body, client, context) {
   if (
@@ -1606,9 +1696,6 @@ async function usersVotes(body, client, context, value) {
     || !body.channel
     || !body.channel.id
     || !value
-    || !body.message.blocks[0]
-    || !body.message.blocks[0].accessory
-    || !body.message.blocks[0].accessory.options
   ) {
     console.log('error');
     return;
@@ -1704,7 +1791,10 @@ async function revealOrHideVotes(body, context, value) {
     || !value
     || !body.message.blocks[0]
     || !body.message.blocks[0].accessory
-    || !body.message.blocks[0].accessory.options
+    || (
+      !body.message.blocks[0].accessory.options
+      && !body.message.blocks[0].accessory.option_groups
+    )
   ) {
     console.log('error');
     return;
@@ -1773,11 +1863,8 @@ async function revealOrHideVotes(body, context, value) {
     }
   }
 
-  const infos = {
-    // anonymous: false,
-    // limited: false,
-    hidden: !isReveal,
-  }
+  const infos = getInfos(['anonymous', 'limited', 'limit'], blocks);
+  infos.hidden = !isReveal;
 
   for (const i in blocks) {
     let b = blocks[i];
@@ -1787,14 +1874,6 @@ async function revealOrHideVotes(body, context, value) {
     ) {
       let val = JSON.parse(b.accessory.value);
       val.hidden = !isReveal;
-
-      if (!infos.hasOwnProperty('anonymous')) {
-        infos.anonymous = val.anonymous;
-      }
-      if (!infos.hasOwnProperty('limited')) {
-        infos.limited = val.limited;
-        infos.limit = val.limit || 1;
-      }
 
       if (!val.hasOwnProperty('voters')) {
         val.voters = [];
@@ -1834,54 +1913,63 @@ async function revealOrHideVotes(body, context, value) {
   }
 
   // replace reveal/hide button
-  const overflowMenu = blocks[0].accessory.options;
-  blocks[0].accessory.options = overflowMenu.map((el) => {
-    value = JSON.parse(el.value);
-    if (el.value && 'btn_reveal' === value.action) {
-      el.text.text = isReveal ? ':ninja: Hide votes': ':eyes: Reveal the votes';
-      value.revealed = !value.revealed;
-      el.value = JSON.stringify(value);
-    }
-    return el;
-  });
-  if (isReveal) {
-    blocks[0].accessory.options = overflowMenu.filter((el) => {
-      return el.value && 'btn_users_votes' !== JSON.parse(el.value).action;
+  if (body.message.blocks[0].accessory.options) {
+    const overflowMenu = blocks[0].accessory.options;
+    blocks[0].accessory.options = overflowMenu.map(el => {
+      value = JSON.parse(el.value);
+      if (el.value && 'btn_reveal' === value.action) {
+        el.text.text = isReveal ? ':ninja: Hide votes': ':eyes: Reveal the votes';
+        value.revealed = !value.revealed;
+        el.value = JSON.stringify(value);
+      }
+      return el;
     });
-  } else {
-    blocks[0].accessory.options.push({
-      text: {
-        type: 'plain_text',
-        text: ':page_with_curl: See users votes',
-        emoji: true,
-      },
-      value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
-    })
+    if (isReveal) {
+      blocks[0].accessory.options = overflowMenu.filter(el => {
+        return el.value && 'btn_users_votes' !== JSON.parse(el.value).action;
+      });
+    } else {
+      blocks[0].accessory.options.push({
+        text: {
+          type: 'plain_text',
+          text: ':page_with_curl: See users votes',
+          emoji: true,
+        },
+        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
+      });
+    }
+  } else if (body.message.blocks[0].accessory.option_groups) {
+    const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
+    blocks[0].accessory.option_groups[0].options =
+      staticSelectMenu.map(el => {
+        value = JSON.parse(el.value);
+        if (el.value && 'btn_reveal' === value.action) {
+          el.text.text = isReveal ? 'Hide votes' : 'Reveal votes';
+          value.revealed = !value.revealed;
+          el.value = JSON.stringify(value);
+        }
+        return el;
+      });
+    if (isReveal) {
+      blocks[0].accessory.option_groups[0].options =
+        staticSelectMenu.filter(
+          el => el.value && 'btn_users_votes' != JSON.parse(el.value).action
+        );
+    } else {
+      blocks[0].accessory.option_groups[0].options.push({
+        text: {
+          type: 'plain_text',
+          text: 'See users votes',
+          emoji: true,
+        },
+        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
+      });
+    }
   }
 
   // add/remove hidden votes info
   const infosIndex = blocks.findIndex(el => el.type === 'context' && el.elements)
-  const infosBlocks = [];
-  if (infos.anonymous) {
-    infosBlocks.push({
-      type: 'mrkdwn',
-      text: ':shushing_face: Anonymous poll',
-    });
-  }
-  if (infos.limited) {
-    infosBlocks.push({
-      type: 'mrkdwn',
-      text: `:warning: Limited to ${infos.limit} vote${infos.limit > 1 ? 's' : ''}`,
-    });
-  }
-  if (infos.hidden) {
-    infosBlocks.push({
-      type: 'mrkdwn',
-      text: ':ninja: Votes are hidden',
-    });
-  }
-  infosBlocks.push(blocks[infosIndex].elements.pop());
-  blocks[infosIndex].elements = infosBlocks;
+  blocks[infosIndex].elements = buildInfosBlocks(blocks);
 
   await app.client.chat.update({
     token: context.botToken,
@@ -1923,4 +2011,72 @@ async function deletePoll(body, context, value) {
     channel: body.channel.id,
     ts: body.message.ts,
   });
+}
+
+
+// global functions
+function getInfos(infos, blocks) {
+  const multi = Array.isArray(infos);
+  let result = multi ? {} : null;
+
+  if (multi) {
+    for (const i of infos) {
+      result[i] = null;
+    }
+  }
+
+  for (const block of blocks) {
+    if (
+      block.hasOwnProperty('accessory')
+      && block.accessory.hasOwnProperty('value')
+    ) {
+      const value = JSON.parse(block.accessory.value);
+
+      if (multi) {
+        for (const i of infos) {
+          if (result[i] === null && value.hasOwnProperty(i)) {
+            result[i] = value[i];
+          }
+        }
+
+        if (!Object.keys(result).find(i => result[i] === null)) {
+          return result;
+        }
+      } else {
+        if (value.hasOwnProperty(infos)) {
+          return value[infos];
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function buildInfosBlocks(blocks) {
+  const infosIndex =
+    blocks.findIndex(el => el.type === 'context' && el.elements);
+  const infosBlocks = [];
+  const infos = getInfos(['anonymous', 'limited', 'limit', 'hidden'], blocks);
+
+  if (infos.anonymous) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':shushing_face: Anonymous poll',
+    });
+  }
+  if (infos.limited) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: `:warning: Limited to ${infos.limit} vote${infos.limit > 1 ? 's' : ''}`,
+    });
+  }
+  if (infos.hidden) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':ninja: Votes are hidden',
+    });
+  }
+  infosBlocks.push(blocks[infosIndex].elements.pop());
+  return infosBlocks;
 }
