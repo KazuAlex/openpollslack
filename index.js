@@ -10,6 +10,7 @@ const port = config.get('port');
 const signing_secret = config.get('signing_secret');
 const slackCommand = config.get('command');
 const helpLink = config.get('help_link');
+const supportUrl = config.get('support_url');
 
 const orgDb = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
 const pollsDb = new JsonDB(new JsonDBConfig('config/polls', true, false, '/'));
@@ -857,116 +858,133 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   }
 
   const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+  try {
+    pollsDb.reload();
+
+    let isClosed = false
     try {
-      pollsDb.reload();
-      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
-      poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+    } catch {}
 
-      if (0 === Object.keys(poll).length) {
-        for (const b of blocks) {
-          if (
-            b.hasOwnProperty('accessory')
-            && b.accessory.hasOwnProperty('value')
-          ) {
-            const val = JSON.parse(b.accessory.value);
-            poll[val.id] = val.voters ? val.voters : [];
-          }
-        }
-      }
-      button_id = 3 + (value.id * 2);
-      context_id = 3 + (value.id * 2) + 1;
-      let blockBtn = blocks[button_id];
-      let block = blocks[context_id];
-      let voters = value.voters ? value.voters : [];
+    if (isClosed) {
+      await app.client.chat.postEphemeral({
+        token: context.botToken,
+        channel: body.channel.id,
+        user: body.user.id,
+        attachments: [],
+        text: "You can't change your votes on closed poll.",
+      });
+      return;
+    }
 
-      let removeVote = false;
-      if (poll[value.id].includes(user_id)) {
-        removeVote = true;
-        poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
-      } else {
-        poll[value.id].push(user_id);
-      }
+    pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
+    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
 
-      if (value.limited && value.limit) {
-        let voteCount = 0;
-        if (0 !== Object.keys(poll).length) {
-          for (const p in poll) {
-            if (poll[p].includes(user_id)) {
-              ++voteCount;
-            }
-          }
-        }
-
-        if (removeVote) {
-          voteCount -= 1;
-        }
-
-        if (voteCount > value.limit) {
-          release();
-          await app.client.chat.postEphemeral({
-            token: context.botToken,
-            channel: channel,
-            user: body.user.id,
-            attachments: [],
-            text: "You can't vote anymore. Remove a vote to choose another option."
-          });
-          return;
-        }
-      }
-
-      for (const i in blocks) {
-        b = blocks[i];
+    if (0 === Object.keys(poll).length) {
+      for (const b of blocks) {
         if (
           b.hasOwnProperty('accessory')
           && b.accessory.hasOwnProperty('value')
         ) {
-          let val = JSON.parse(b.accessory.value);
-          if (!val.hasOwnProperty('voters')) {
-            val.voters = [];
-          }
+          const val = JSON.parse(b.accessory.value);
+          poll[val.id] = val.voters ? val.voters : [];
+        }
+      }
+    }
+    button_id = 3 + (value.id * 2);
+    context_id = 3 + (value.id * 2) + 1;
+    let blockBtn = blocks[button_id];
+    let block = blocks[context_id];
+    let voters = value.voters ? value.voters : [];
 
-          val.voters = poll[val.id];
-          let newVoters = '';
+    let removeVote = false;
+    if (poll[value.id].includes(user_id)) {
+      removeVote = true;
+      poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
+    } else {
+      poll[value.id].push(user_id);
+    }
 
-          if (val.hasOwnProperty('hidden') && val.hidden) {
-            newVoters = 'Wait for reveal';
-          } else if (poll[val.id].length === 0) {
-            newVoters = 'No votes';
-          } else {
-            newVoters = '';
-            for (const voter of poll[val.id]) {
-              if (!val.anonymous) {
-                newVoters += '<@'+voter+'> ';
-              }
-            }
-
-            newVoters += poll[val.id].length +' ';
-            if (poll[val.id].length === 1) {
-              newVoters += 'vote';
-            } else {
-              newVoters += 'votes';
-            }
-          }
-
-          blocks[i].accessory.value = JSON.stringify(val);
-          const nextI = ''+(parseInt(i)+1);
-          if (blocks[nextI].hasOwnProperty('elements')) {
-            blocks[nextI].elements[0].text = newVoters;
+    if (value.limited && value.limit) {
+      let voteCount = 0;
+      if (0 !== Object.keys(poll).length) {
+        for (const p in poll) {
+          if (poll[p].includes(user_id)) {
+            ++voteCount;
           }
         }
       }
 
-      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
+      if (removeVote) {
+        voteCount -= 1;
+      }
 
-      await app.client.chat.update({
-        token: context.botToken,
-        channel: channel,
-        ts: message.ts,
-        blocks: blocks,
-      });
-    } finally {
-      release();
+      if (voteCount > value.limit) {
+        release();
+        await app.client.chat.postEphemeral({
+          token: context.botToken,
+          channel: channel,
+          user: body.user.id,
+          attachments: [],
+          text: "You can't vote anymore. Remove a vote to choose another option."
+        });
+        return;
+      }
     }
+
+    for (const i in blocks) {
+      b = blocks[i];
+      if (
+        b.hasOwnProperty('accessory')
+        && b.accessory.hasOwnProperty('value')
+      ) {
+        let val = JSON.parse(b.accessory.value);
+        if (!val.hasOwnProperty('voters')) {
+          val.voters = [];
+        }
+
+        val.voters = poll[val.id];
+        let newVoters = '';
+
+        if (val.hasOwnProperty('hidden') && val.hidden) {
+          newVoters = 'Wait for reveal';
+        } else if (poll[val.id].length === 0) {
+          newVoters = 'No votes';
+        } else {
+          newVoters = '';
+          for (const voter of poll[val.id]) {
+            if (!val.anonymous) {
+              newVoters += '<@'+voter+'> ';
+            }
+          }
+
+          newVoters += poll[val.id].length +' ';
+          if (poll[val.id].length === 1) {
+            newVoters += 'vote';
+          } else {
+            newVoters += 'votes';
+          }
+        }
+
+        blocks[i].accessory.value = JSON.stringify(val);
+        const nextI = ''+(parseInt(i)+1);
+        if (blocks[nextI].hasOwnProperty('elements')) {
+          blocks[nextI].elements[0].text = newVoters;
+        }
+      }
+    }
+
+    pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
+
+    await app.client.chat.update({
+      token: context.botToken,
+      channel: channel,
+      ts: message.ts,
+      blocks: blocks,
+    });
+  } finally {
+    release();
+  }
 });
 
 app.shortcut('open_modal_new', async ({ shortcut, ack, context, client }) => {
@@ -1347,36 +1365,66 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 
   const blocks = [];
 
-  const overflowMenuElements = [];
-
-  if (isHidden) {
-    overflowMenuElements.push({
+  const staticSelectElements = [{
+    label: {
+      type: 'plain_text',
+      text: 'Poll actions',
+    },
+    options: [{
       text: {
-        type: "plain_text",
-        text: ":eyes: Reveal the votes",
-        emoji: true,
+        type: 'plain_text',
+        text: isHidden ? 'Reveal votes' : 'Hide votes',
       },
-      value: JSON.stringify({action: 'btn_reveal', revealed: false, user: userId}),
+      value:
+        JSON.stringify({action: 'btn_reveal', revealed: !isHidden, user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'See users votes',
+      },
+      value: JSON.stringify({action: 'btn_users_votes', user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'Delete the poll',
+      },
+      value: JSON.stringify({action: 'btn_delete', user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'Close the poll',
+      },
+      value: JSON.stringify({action: 'btn_close', user: userId}),
+    }],
+  }, {
+    label: {
+      type: 'plain_text',
+      text: 'User actions',
+    },
+    options: [{
+      text: {
+        type: 'plain_text',
+        text: 'See your votes',
+      },
+      value: JSON.stringify({action: 'btn_my_votes', user: userId}),
+    }],
+  }];
+
+  if (supportUrl) {
+    staticSelectElements.push({
+      label: {
+        type: 'plain_text',
+        text: 'Support',
+      },
+      options: [{
+        text: {
+          type: 'plain_text',
+          text: 'Love Open Poll ?',
+        },
+        value: JSON.stringify({action: 'btn_love_open_poll', user: userId}),
+      }],
     });
   }
-
-  overflowMenuElements.push({
-    text: {
-      type: "plain_text",
-      text: ":wastebasket: Remove the poll",
-      emoji: true,
-    },
-    value: JSON.stringify({action: 'btn_delete', user: userId}),
-  });
-
-  overflowMenuElements.push({
-    text: {
-      type: "plain_text",
-      text: ":ballot_box_with_ballot: See your votes",
-      emoji: true,
-    },
-    value: JSON.stringify({action: 'btn_my_votes', user: userId}),
-  });
 
   blocks.push({
     type: 'section',
@@ -1385,9 +1433,10 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
       text: question,
     },
     accessory: {
-      type: 'overflow',
-      options: overflowMenuElements,
-      action_id: 'overflow_menu',
+      type: 'static_select',
+      placeholder: { type: 'plain_text', text: 'Menu' },
+      action_id: 'static_select_menu',
+      option_groups: staticSelectElements,
     },
   });
 
@@ -1490,7 +1539,12 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
 }
 
 // btn actions
-app.action('overflow_menu', async ({ack, action, body, client, context}) => {
+app.action('overflow_menu', btnActions);
+app.action('static_select_menu', btnActions);
+app.action('ignore_me', async ({ ack }) => { await ack() });
+
+async function btnActions(args) {
+  const {ack, action, body, client, context} = args;
   await ack();
 
   if (
@@ -1507,13 +1561,80 @@ app.action('overflow_menu', async ({ack, action, body, client, context}) => {
     return;
   }
 
-  if ('btn_my_votes' === value.action)
+  if ('btn_love_open_poll' === value.action)
+    supportAction(body, client, context)
+  else if ('btn_my_votes' === value.action)
     myVotes(body, client, context);
+  else if ('btn_users_votes' === value.action)
+    usersVotes(body, client, context, value);
   else if ('btn_reveal' === value.action)
-    revealVotes(body, context, value);
+    revealOrHideVotes(body, context, value);
   else if ('btn_delete' === value.action)
     deletePoll(body, context, value);
-})
+  else if ('btn_close' === value.action)
+    closePoll(body, client, context, value);
+}
+
+async function supportAction(body, client, context) {
+  if (
+    !body.user
+    || !body.user.id
+    || !body.channel
+    || !body.channel.id
+  ) {
+    return;
+  }
+
+  const blocks = [{
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':heart: You love the app ?',
+    },
+  },
+  { type: 'divider' },
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':technologist: Contribute on it',
+    },
+    accessory: {
+      type: 'button',
+      text: {
+        type: 'plain_text',
+        text: 'Open GitLab',
+      },
+      style: 'primary',
+      url: 'https://gitlab.com/KazuAlex/openpollslack',
+      action_id: 'ignore_me',
+    }
+  },
+  {
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: ':coffee: Buy me a coffee to help me to maintain servers or just thanks me',
+    },
+    accessory: {
+      type: 'button',
+      text: {
+        type: 'plain_text',
+        text: 'Buy a coffee',
+      },
+      url: 'https://www.buymeacoffee.com/kazualex',
+      action_id: 'ignore_me',
+    }
+  }];
+
+  await client.chat.postEphemeral({
+    token: context.botToken,
+    channel: body.channel.id,
+    user: body.user.id,
+    blocks,
+    text: 'Support Open Poll',
+  });
+}
 
 async function myVotes(body, client, context) {
   if (
@@ -1589,7 +1710,100 @@ async function myVotes(body, client, context) {
   }
 }
 
-async function revealVotes(body, context, value) {
+async function usersVotes(body, client, context, value) {
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.message.blocks
+    || !body.channel
+    || !body.channel.id
+    || !value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id !== value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't see all users votes.",
+    });
+    return;
+  }
+
+  const message = body.message;
+  const channel = body.channel.id;
+  const blocks = message.blocks;
+
+  const votes = [];
+  let poll = null;
+
+  try {
+    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+  } catch(e) {
+  }
+
+  for (const block of blocks) {
+    if (
+      block.hasOwnProperty('accessory')
+      && block.accessory.hasOwnProperty('value')
+    ) {
+      const value = JSON.parse(block.accessory.value);
+      const voters = poll ? (poll[value.id] || []) : [];
+      votes.push({
+        type: 'divider',
+      });
+      votes.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: block.text.text,
+        },
+      });
+      votes.push({
+        type: 'context',
+        elements: [{
+          type: 'mrkdwn',
+          text: !voters.length
+            ? 'No voters'
+            : voters.map(el => {
+                return `<@${el}>`;
+              }).join(', '),
+        }],
+      });
+    }
+  }
+
+  try {
+    await client.views.open({
+      token: context.botToken,
+      trigger_id: body.trigger_id,
+      view: {
+        type: 'modal',
+        title: {
+          type: 'plain_text',
+          text: 'Users votes',
+        },
+        close: {
+          type: 'plain_text',
+          text: 'Close',
+        },
+        blocks: votes,
+      },
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+async function revealOrHideVotes(body, context, value) {
   if (
     !body
     || !body.user
@@ -1602,7 +1816,10 @@ async function revealVotes(body, context, value) {
     || !value
     || !body.message.blocks[0]
     || !body.message.blocks[0].accessory
-    || !body.message.blocks[0].accessory.options
+    || (
+      !body.message.blocks[0].accessory.options
+      && !body.message.blocks[0].accessory.option_groups
+    )
   ) {
     console.log('error');
     return;
@@ -1620,33 +1837,59 @@ async function revealVotes(body, context, value) {
     return;
   }
 
-  if (value.hasOwnProperty('revealed') && value.revealed) {
-    console.log('poll already revealed');
+  if (!value.hasOwnProperty('revealed')) {
+    console.log('Missing `revealed` information on poll');
     await app.client.chat.postEphemeral({
       token: context.botToken,
       channel: body.channel.id,
       user: body.user.id,
       attachments: [],
-      text: "This poll is already revealed.",
+      text: 'Unconsistent poll data',
     });
     return;
   }
 
+  let isReveal = !value.revealed;
   let message = body.message;
   let channel = body.channel.id;
   let blocks = message.blocks;
   try {
     poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
   } catch (e) {
-    await app.client.chat.postEphemeral({
-      token: context.botToken,
-      channel: body.channel.id,
-      user: body.user.id,
-      attachments: [],
-      text: "Nobody has voted yet.",
-    });
-    return;
+    if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
+      mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+    }
+
+    const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+
+    try {
+      pollsDb.reload();
+      poll = {};
+
+      if (0 === Object.keys(poll).length) {
+        for (const b of blocks) {
+          if (
+            b.hasOwnProperty('accessory')
+            && b.accessory.hasOwnProperty('value')
+          ) {
+            const val = JSON.parse(b.accessory.value);
+            poll[val.id] = val.voters ? val.voters : [];
+          }
+        }
+      }
+
+      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll, false);
+    } finally {
+      release();
+    }
+
+    if (!poll) {
+      console.log('Error creating poll votes data')
+    }
   }
+
+  const infos = getInfos(['anonymous', 'limited', 'limit'], blocks);
+  infos.hidden = !isReveal;
 
   for (const i in blocks) {
     let b = blocks[i];
@@ -1655,7 +1898,7 @@ async function revealVotes(body, context, value) {
       && b.accessory.hasOwnProperty('value')
     ) {
       let val = JSON.parse(b.accessory.value);
-      val.hidden = false;
+      val.hidden = !isReveal;
 
       if (!val.hasOwnProperty('voters')) {
         val.voters = [];
@@ -1664,22 +1907,26 @@ async function revealVotes(body, context, value) {
       val.voters = poll[val.id];
       let newVoters = '';
 
-      if (poll[val.id].length === 0) {
-        newVoters = 'No votes';
-      } else {
-        newVoters = '';
-        for (const voter of poll[val.id]) {
-          if (!val.anonymous) {
-            newVoters += '<@'+voter+'> ';
+      if (isReveal) {
+        if (poll[val.id].length === 0) {
+          newVoters = 'No votes';
+        } else {
+          newVoters = '';
+          for (const voter of poll[val.id]) {
+            if (!val.anonymous) {
+              newVoters += '<@'+voter+'> ';
+            }
+          }
+
+          newVoters += poll[val.id].length +' ';
+          if (poll[val.id].length === 1) {
+            newVoters += 'vote';
+          } else {
+            newVoters += 'votes';
           }
         }
-
-        newVoters += poll[val.id].length +' ';
-        if (poll[val.id].length === 1) {
-          newVoters += 'vote';
-        } else {
-          newVoters += 'votes';
-        }
+      } else {
+        newVoters = 'Wait for reveal';
       }
 
       blocks[i].accessory.value = JSON.stringify(val);
@@ -1690,12 +1937,64 @@ async function revealVotes(body, context, value) {
     }
   }
 
-  // remove reveal button
-  const overflowMenu = blocks[0].accessory.options;
-  blocks[0].accessory.options = overflowMenu.filter((el) => {
-    return el.value
-      && 'btn_reveal' !== JSON.parse(el.value).action;
-  })
+  // replace reveal/hide button
+  if (body.message.blocks[0].accessory.options) {
+    const overflowMenu = blocks[0].accessory.options;
+    blocks[0].accessory.options = overflowMenu.map(el => {
+      value = JSON.parse(el.value);
+      if (el.value && 'btn_reveal' === value.action) {
+        el.text.text = isReveal ? ':ninja: Hide votes': ':eyes: Reveal the votes';
+        value.revealed = !value.revealed;
+        el.value = JSON.stringify(value);
+      }
+      return el;
+    });
+    if (isReveal) {
+      blocks[0].accessory.options = overflowMenu.filter(el => {
+        return el.value && 'btn_users_votes' !== JSON.parse(el.value).action;
+      });
+    } else {
+      blocks[0].accessory.options.push({
+        text: {
+          type: 'plain_text',
+          text: ':page_with_curl: See users votes',
+          emoji: true,
+        },
+        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
+      });
+    }
+  } else if (body.message.blocks[0].accessory.option_groups) {
+    const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
+    blocks[0].accessory.option_groups[0].options =
+      staticSelectMenu.map(el => {
+        value = JSON.parse(el.value);
+        if (el.value && 'btn_reveal' === value.action) {
+          el.text.text = isReveal ? 'Hide votes' : 'Reveal votes';
+          value.revealed = !value.revealed;
+          el.value = JSON.stringify(value);
+        }
+        return el;
+      });
+    if (isReveal) {
+      blocks[0].accessory.option_groups[0].options =
+        staticSelectMenu.filter(
+          el => el.value && 'btn_users_votes' != JSON.parse(el.value).action
+        );
+    } else {
+      blocks[0].accessory.option_groups[0].options.push({
+        text: {
+          type: 'plain_text',
+          text: 'See users votes',
+          emoji: true,
+        },
+        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
+      });
+    }
+  }
+
+  // add/remove hidden votes info
+  const infosIndex = blocks.findIndex(el => el.type === 'context' && el.elements)
+  blocks[infosIndex].elements = buildInfosBlocks(blocks);
 
   await app.client.chat.update({
     token: context.botToken,
@@ -1737,4 +2036,187 @@ async function deletePoll(body, context, value) {
     channel: body.channel.id,
     ts: body.message.ts,
   });
+}
+
+async function closePoll(body, client, context, value) {
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.message.blocks
+    || !body.channel
+    || !body.channel.id
+    || !value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id !== value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't close the poll.",
+    });
+    return;
+  }
+
+  const message = body.message;
+  const channel = body.channel.id;
+  const blocks = message.blocks;
+
+  if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
+    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+  }
+
+  const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+
+  try {
+    let isClosed = false
+    try {
+      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+    } catch {}
+
+    if (isClosed) {
+      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, false, false);
+
+      for (const i in blocks) {
+        const block = blocks[i];
+
+        if (
+          block.hasOwnProperty('accessory')
+          && block.accessory.hasOwnProperty('value')
+        ) {
+          const value = JSON.parse(block.accessory.value);
+
+          value.closed = false;
+
+          blocks[i].accessory.value = JSON.stringify(value);
+        }
+      }
+    } else {
+      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, true, false);
+
+      for (const i in blocks) {
+        const block = blocks[i];
+
+        if (
+          block.hasOwnProperty('accessory')
+          && block.accessory.hasOwnProperty('value')
+        ) {
+          const value = JSON.parse(block.accessory.value);
+
+          value.closed = true;
+
+          blocks[i].accessory.value = JSON.stringify(value);
+        }
+      }
+    }
+
+    if (blocks[0].accessory.option_groups) {
+      const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
+      blocks[0].accessory.option_groups[0].options =
+        staticSelectMenu.map(el => {
+          value = JSON.parse(el.value);
+          if (el.value && 'btn_close' === value.action) {
+            el.text.text = isClosed ? 'Close the poll' : 'Reopen the poll';
+            value.closed = !value.closed;
+            el.value = JSON.stringify(value);
+          }
+          return el;
+        });
+    }
+
+    const infosIndex =
+      blocks.findIndex(el => el.type === 'context' && el.elements);
+    blocks[infosIndex].elements = buildInfosBlocks(blocks);
+
+    await app.client.chat.update({
+      token: context.botToken,
+      channel: channel,
+      ts: message.ts,
+      blocks: blocks,
+    });
+  } finally {
+    release();
+  }
+}
+
+
+// global functions
+function getInfos(infos, blocks) {
+  const multi = Array.isArray(infos);
+  let result = multi ? {} : null;
+
+  if (multi) {
+    for (const i of infos) {
+      result[i] = null;
+    }
+  }
+
+  for (const block of blocks) {
+    if (
+      block.hasOwnProperty('accessory')
+      && block.accessory.hasOwnProperty('value')
+    ) {
+      const value = JSON.parse(block.accessory.value);
+
+      if (multi) {
+        for (const i of infos) {
+          if (result[i] === null && value.hasOwnProperty(i)) {
+            result[i] = value[i];
+          }
+        }
+
+        if (!Object.keys(result).find(i => result[i] === null)) {
+          return result;
+        }
+      } else {
+        if (value.hasOwnProperty(infos)) {
+          return value[infos];
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+function buildInfosBlocks(blocks) {
+  const infosIndex =
+    blocks.findIndex(el => el.type === 'context' && el.elements);
+  const infosBlocks = [];
+  const infos = getInfos(['anonymous', 'limited', 'limit', 'hidden', 'closed'], blocks);
+
+  if (infos.anonymous) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':shushing_face: Anonymous poll',
+    });
+  }
+  if (infos.limited) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: `:warning: Limited to ${infos.limit} vote${infos.limit > 1 ? 's' : ''}`,
+    });
+  }
+  if (infos.hidden) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':ninja: Votes are hidden',
+    });
+  }
+  if (infos.closed) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':x: Closed',
+    });
+  }
+  infosBlocks.push(blocks[infosIndex].elements.pop());
+  return infosBlocks;
 }
