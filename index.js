@@ -860,6 +860,23 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
   try {
     pollsDb.reload();
+
+    let isClosed = false
+    try {
+      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+    } catch {}
+
+    if (isClosed) {
+      await app.client.chat.postEphemeral({
+        token: context.botToken,
+        channel: body.channel.id,
+        user: body.user.id,
+        attachments: [],
+        text: "You can't change your votes on closed poll.",
+      });
+      return;
+    }
+
     pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
     poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
 
@@ -1369,9 +1386,15 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
     }, {
       text: {
         type: 'plain_text',
-        text: 'Remove the poll',
+        text: 'Delete the poll',
       },
       value: JSON.stringify({action: 'btn_delete', user: userId}),
+    }, {
+      text: {
+        type: 'plain_text',
+        text: 'Close the poll',
+      },
+      value: JSON.stringify({action: 'btn_close', user: userId}),
     }],
   }, {
     label: {
@@ -1548,6 +1571,8 @@ async function btnActions(args) {
     revealOrHideVotes(body, context, value);
   else if ('btn_delete' === value.action)
     deletePoll(body, context, value);
+  else if ('btn_close' === value.action)
+    closePoll(body, client, context, value);
 }
 
 async function supportAction(body, client, context) {
@@ -2013,6 +2038,115 @@ async function deletePoll(body, context, value) {
   });
 }
 
+async function closePoll(body, client, context, value) {
+  if (
+    !body
+    || !body.user
+    || !body.user.id
+    || !body.message
+    || !body.message.ts
+    || !body.message.blocks
+    || !body.channel
+    || !body.channel.id
+    || !value
+  ) {
+    console.log('error');
+    return;
+  }
+
+  if (body.user.id !== value.user) {
+    console.log('invalid user');
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "You can't close the poll.",
+    });
+    return;
+  }
+
+  const message = body.message;
+  const channel = body.channel.id;
+  const blocks = message.blocks;
+
+  if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
+    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+  }
+
+  const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+
+  try {
+    let isClosed = false
+    try {
+      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+    } catch {}
+
+    if (isClosed) {
+      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, false, false);
+
+      for (const i in blocks) {
+        const block = blocks[i];
+
+        if (
+          block.hasOwnProperty('accessory')
+          && block.accessory.hasOwnProperty('value')
+        ) {
+          const value = JSON.parse(block.accessory.value);
+
+          value.closed = false;
+
+          blocks[i].accessory.value = JSON.stringify(value);
+        }
+      }
+    } else {
+      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, true, false);
+
+      for (const i in blocks) {
+        const block = blocks[i];
+
+        if (
+          block.hasOwnProperty('accessory')
+          && block.accessory.hasOwnProperty('value')
+        ) {
+          const value = JSON.parse(block.accessory.value);
+
+          value.closed = true;
+
+          blocks[i].accessory.value = JSON.stringify(value);
+        }
+      }
+    }
+
+    if (blocks[0].accessory.option_groups) {
+      const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
+      blocks[0].accessory.option_groups[0].options =
+        staticSelectMenu.map(el => {
+          value = JSON.parse(el.value);
+          if (el.value && 'btn_close' === value.action) {
+            el.text.text = isClosed ? 'Close the poll' : 'Reopen the poll';
+            value.closed = !value.closed;
+            el.value = JSON.stringify(value);
+          }
+          return el;
+        });
+    }
+
+    const infosIndex =
+      blocks.findIndex(el => el.type === 'context' && el.elements);
+    blocks[infosIndex].elements = buildInfosBlocks(blocks);
+
+    await app.client.chat.update({
+      token: context.botToken,
+      channel: channel,
+      ts: message.ts,
+      blocks: blocks,
+    });
+  } finally {
+    release();
+  }
+}
+
 
 // global functions
 function getInfos(infos, blocks) {
@@ -2057,7 +2191,7 @@ function buildInfosBlocks(blocks) {
   const infosIndex =
     blocks.findIndex(el => el.type === 'context' && el.elements);
   const infosBlocks = [];
-  const infos = getInfos(['anonymous', 'limited', 'limit', 'hidden'], blocks);
+  const infos = getInfos(['anonymous', 'limited', 'limit', 'hidden', 'closed'], blocks);
 
   if (infos.anonymous) {
     infosBlocks.push({
@@ -2075,6 +2209,12 @@ function buildInfosBlocks(blocks) {
     infosBlocks.push({
       type: 'mrkdwn',
       text: ':ninja: Votes are hidden',
+    });
+  }
+  if (infos.closed) {
+    infosBlocks.push({
+      type: 'mrkdwn',
+      text: ':x: Closed',
     });
   }
   infosBlocks.push(blocks[infosIndex].elements.pop());
