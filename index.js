@@ -900,9 +900,6 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
     let removeVote = false;
     if (poll[value.id].includes(user_id)) {
       removeVote = true;
-      poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
-    } else {
-      poll[value.id].push(user_id);
     }
 
     if (value.limited && value.limit) {
@@ -919,7 +916,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         voteCount -= 1;
       }
 
-      if (voteCount > value.limit) {
+      if (voteCount >= value.limit) {
         release();
         await app.client.chat.postEphemeral({
           token: context.botToken,
@@ -930,6 +927,12 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         });
         return;
       }
+    }
+
+    if (removeVote) {
+      poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
+    } else {
+      poll[value.id].push(user_id);
     }
 
     for (const i in blocks) {
