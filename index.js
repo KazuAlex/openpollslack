@@ -854,7 +854,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   let value = JSON.parse(action.value);
 
   if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 5000);
   }
 
   const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
@@ -917,7 +917,6 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
       }
 
       if (voteCount >= value.limit) {
-        release();
         await app.client.chat.postEphemeral({
           token: context.botToken,
           channel: channel,
