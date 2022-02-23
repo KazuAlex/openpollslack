@@ -4,7 +4,7 @@ const config = require('config');
 const { JsonDB } = require('node-json-db');
 const JsonDBConfig = require('node-json-db/dist/lib/JsonDBConfig').Config;
 
-const { Mutex, withTimeout } = require('async-mutex');
+const { Mutex } = require('async-mutex');
 
 const port = config.get('port');
 const signing_secret = config.get('signing_secret');
@@ -854,138 +854,168 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
   let value = JSON.parse(action.value);
 
   if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 5000);
+    mutexes[`${message.team}/${channel}/${message.ts}`] = new Mutex();
   }
 
-  const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
-  try {
-    pollsDb.reload();
+  let release = null;
+  let countTry = 0;
+  do {
+    ++countTry;
 
-    let isClosed = false
     try {
-      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
-    } catch {}
+      release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+    } catch (e) {
+      console.log(`[Try #${countTry}] Error while attempt to acquire mutex lock.`, e)
+    }
+  } while (!release && countTry < 3);
 
-    if (isClosed) {
+  if (release) {
+    try {
+      pollsDb.reload();
+
+      let isClosed = false
+      try {
+        isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+      } catch {}
+
+      if (isClosed) {
+        await app.client.chat.postEphemeral({
+          token: context.botToken,
+          channel: body.channel.id,
+          user: body.user.id,
+          attachments: [],
+          text: "You can't change your votes on closed poll.",
+        });
+        return;
+      }
+
+      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
+      poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+
+      if (0 === Object.keys(poll).length) {
+        for (const b of blocks) {
+          if (
+            b.hasOwnProperty('accessory')
+            && b.accessory.hasOwnProperty('value')
+          ) {
+            const val = JSON.parse(b.accessory.value);
+            poll[val.id] = val.voters ? val.voters : [];
+          }
+        }
+      }
+      button_id = 3 + (value.id * 2);
+      context_id = 3 + (value.id * 2) + 1;
+      let blockBtn = blocks[button_id];
+      let block = blocks[context_id];
+      let voters = value.voters ? value.voters : [];
+
+      let removeVote = false;
+      if (poll[value.id].includes(user_id)) {
+        removeVote = true;
+      }
+
+      if (value.limited && value.limit) {
+        let voteCount = 0;
+        if (0 !== Object.keys(poll).length) {
+          for (const p in poll) {
+            if (poll[p].includes(user_id)) {
+              ++voteCount;
+            }
+          }
+        }
+
+        if (removeVote) {
+          voteCount -= 1;
+        }
+
+        if (voteCount >= value.limit) {
+          await app.client.chat.postEphemeral({
+            token: context.botToken,
+            channel: channel,
+            user: body.user.id,
+            attachments: [],
+            text: "You can't vote anymore. Remove a vote to choose another option.",
+          });
+          return;
+        }
+      }
+
+      if (removeVote) {
+        poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
+      } else {
+        poll[value.id].push(user_id);
+      }
+
+      for (const i in blocks) {
+        b = blocks[i];
+        if (
+          b.hasOwnProperty('accessory')
+          && b.accessory.hasOwnProperty('value')
+        ) {
+          let val = JSON.parse(b.accessory.value);
+          if (!val.hasOwnProperty('voters')) {
+            val.voters = [];
+          }
+
+          val.voters = poll[val.id];
+          let newVoters = '';
+
+          if (val.hasOwnProperty('hidden') && val.hidden) {
+            newVoters = 'Wait for reveal';
+          } else if (poll[val.id].length === 0) {
+            newVoters = 'No votes';
+          } else {
+            newVoters = '';
+            for (const voter of poll[val.id]) {
+              if (!val.anonymous) {
+                newVoters += '<@'+voter+'> ';
+              }
+            }
+
+            newVoters += poll[val.id].length +' ';
+            if (poll[val.id].length === 1) {
+              newVoters += 'vote';
+            } else {
+              newVoters += 'votes';
+            }
+          }
+
+          blocks[i].accessory.value = JSON.stringify(val);
+          const nextI = ''+(parseInt(i)+1);
+          if (blocks[nextI].hasOwnProperty('elements')) {
+            blocks[nextI].elements[0].text = newVoters;
+          }
+        }
+      }
+
+      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
+
+      await app.client.chat.update({
+        token: context.botToken,
+        channel: channel,
+        ts: message.ts,
+        blocks: blocks,
+        text: message.text,
+      });
+    } catch {
       await app.client.chat.postEphemeral({
         token: context.botToken,
         channel: body.channel.id,
         user: body.user.id,
         attachments: [],
-        text: "You can't change your votes on closed poll.",
+        text: 'An error occurred during vote processing. Please try again in few seconds.',
       });
-      return;
+    } finally {
+      release();
     }
-
-    pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
-    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
-
-    if (0 === Object.keys(poll).length) {
-      for (const b of blocks) {
-        if (
-          b.hasOwnProperty('accessory')
-          && b.accessory.hasOwnProperty('value')
-        ) {
-          const val = JSON.parse(b.accessory.value);
-          poll[val.id] = val.voters ? val.voters : [];
-        }
-      }
-    }
-    button_id = 3 + (value.id * 2);
-    context_id = 3 + (value.id * 2) + 1;
-    let blockBtn = blocks[button_id];
-    let block = blocks[context_id];
-    let voters = value.voters ? value.voters : [];
-
-    let removeVote = false;
-    if (poll[value.id].includes(user_id)) {
-      removeVote = true;
-    }
-
-    if (value.limited && value.limit) {
-      let voteCount = 0;
-      if (0 !== Object.keys(poll).length) {
-        for (const p in poll) {
-          if (poll[p].includes(user_id)) {
-            ++voteCount;
-          }
-        }
-      }
-
-      if (removeVote) {
-        voteCount -= 1;
-      }
-
-      if (voteCount >= value.limit) {
-        await app.client.chat.postEphemeral({
-          token: context.botToken,
-          channel: channel,
-          user: body.user.id,
-          attachments: [],
-          text: "You can't vote anymore. Remove a vote to choose another option."
-        });
-        return;
-      }
-    }
-
-    if (removeVote) {
-      poll[value.id] = poll[value.id].filter(voter_id => voter_id != user_id);
-    } else {
-      poll[value.id].push(user_id);
-    }
-
-    for (const i in blocks) {
-      b = blocks[i];
-      if (
-        b.hasOwnProperty('accessory')
-        && b.accessory.hasOwnProperty('value')
-      ) {
-        let val = JSON.parse(b.accessory.value);
-        if (!val.hasOwnProperty('voters')) {
-          val.voters = [];
-        }
-
-        val.voters = poll[val.id];
-        let newVoters = '';
-
-        if (val.hasOwnProperty('hidden') && val.hidden) {
-          newVoters = 'Wait for reveal';
-        } else if (poll[val.id].length === 0) {
-          newVoters = 'No votes';
-        } else {
-          newVoters = '';
-          for (const voter of poll[val.id]) {
-            if (!val.anonymous) {
-              newVoters += '<@'+voter+'> ';
-            }
-          }
-
-          newVoters += poll[val.id].length +' ';
-          if (poll[val.id].length === 1) {
-            newVoters += 'vote';
-          } else {
-            newVoters += 'votes';
-          }
-        }
-
-        blocks[i].accessory.value = JSON.stringify(val);
-        const nextI = ''+(parseInt(i)+1);
-        if (blocks[nextI].hasOwnProperty('elements')) {
-          blocks[nextI].elements[0].text = newVoters;
-        }
-      }
-    }
-
-    pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
-
-    await app.client.chat.update({
+  } else {
+    await app.client.chat.postEphemeral({
       token: context.botToken,
-      channel: channel,
-      ts: message.ts,
-      blocks: blocks,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: 'An error occurred during vote processing. Please try again in few seconds.',
     });
-  } finally {
-    release();
   }
 });
 
@@ -1855,38 +1885,59 @@ async function revealOrHideVotes(body, context, value) {
   let message = body.message;
   let channel = body.channel.id;
   let blocks = message.blocks;
+  let poll = null;
   try {
     poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
   } catch (e) {
     if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-      mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+      mutexes[`${message.team}/${channel}/${message.ts}`] = new Mutex();
     }
 
-    const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+    let release = null;
+    let countTry = 0;
+    do {
+      ++countTry;
 
-    try {
-      pollsDb.reload();
-      poll = {};
+      try {
+        release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+      } catch (e) {
+        console.log(`[Try #${countTry}] Error while attempt to acquire mutex lock.`, e)
+      }
+    } while (!release && countTry < 3);
 
-      if (0 === Object.keys(poll).length) {
-        for (const b of blocks) {
-          if (
-            b.hasOwnProperty('accessory')
-            && b.accessory.hasOwnProperty('value')
-          ) {
-            const val = JSON.parse(b.accessory.value);
-            poll[val.id] = val.voters ? val.voters : [];
+    if (release) {
+      try {
+        pollsDb.reload();
+        poll = {};
+
+        if (0 === Object.keys(poll).length) {
+          for (const b of blocks) {
+            if (
+              b.hasOwnProperty('accessory')
+              && b.accessory.hasOwnProperty('value')
+            ) {
+              const val = JSON.parse(b.accessory.value);
+              poll[val.id] = val.voters ? val.voters : [];
+            }
           }
         }
-      }
 
-      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll, false);
-    } finally {
-      release();
+        pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll, false);
+      } finally {
+        release();
+      }
     }
 
     if (!poll) {
-      console.log('Error creating poll votes data')
+      console.error('Error creating poll votes data.');
+      await app.client.chat.postEphemeral({
+        token: context.botToken,
+        channel: channel,
+        user: body.user.id,
+        attachments: [],
+        text: `An error occurred while attempt to ${isReveal ? 'reveal' : 'hide'} the poll. Please try again in few seconds.`,
+      });
+      return;
     }
   }
 
@@ -2073,79 +2124,99 @@ async function closePoll(body, client, context, value) {
   const blocks = message.blocks;
 
   if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-    mutexes[`${message.team}/${channel}/${message.ts}`] = withTimeout(new Mutex(), 2000);
+    mutexes[`${message.team}/${channel}/${message.ts}`] = new Mutex();
   }
 
-  const release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+  let release = null;
+  let countTry = 0;
+  do {
+    ++countTry;
 
-  try {
-    let isClosed = false
     try {
-      isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
-    } catch {}
-
-    if (isClosed) {
-      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, false, false);
-
-      for (const i in blocks) {
-        const block = blocks[i];
-
-        if (
-          block.hasOwnProperty('accessory')
-          && block.accessory.hasOwnProperty('value')
-        ) {
-          const value = JSON.parse(block.accessory.value);
-
-          value.closed = false;
-
-          blocks[i].accessory.value = JSON.stringify(value);
-        }
-      }
-    } else {
-      pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, true, false);
-
-      for (const i in blocks) {
-        const block = blocks[i];
-
-        if (
-          block.hasOwnProperty('accessory')
-          && block.accessory.hasOwnProperty('value')
-        ) {
-          const value = JSON.parse(block.accessory.value);
-
-          value.closed = true;
-
-          blocks[i].accessory.value = JSON.stringify(value);
-        }
-      }
+      release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+    } catch (e) {
+      console.log(`[Try #${countTry}] Error while attempt to acquire mutex lock.`, e)
     }
+  } while (!release && countTry < 3);
 
-    if (blocks[0].accessory.option_groups) {
-      const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
-      blocks[0].accessory.option_groups[0].options =
-        staticSelectMenu.map(el => {
-          value = JSON.parse(el.value);
-          if (el.value && 'btn_close' === value.action) {
-            el.text.text = isClosed ? 'Close the poll' : 'Reopen the poll';
-            value.closed = !value.closed;
-            el.value = JSON.stringify(value);
+  if (release) {
+    try {
+      let isClosed = false
+      try {
+        isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+      } catch {}
+
+      if (isClosed) {
+        pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, false, false);
+
+        for (const i in blocks) {
+          const block = blocks[i];
+
+          if (
+            block.hasOwnProperty('accessory')
+            && block.accessory.hasOwnProperty('value')
+          ) {
+            const value = JSON.parse(block.accessory.value);
+
+            value.closed = false;
+
+            blocks[i].accessory.value = JSON.stringify(value);
           }
-          return el;
-        });
+        }
+      } else {
+        pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, true, false);
+
+        for (const i in blocks) {
+          const block = blocks[i];
+
+          if (
+            block.hasOwnProperty('accessory')
+            && block.accessory.hasOwnProperty('value')
+          ) {
+            const value = JSON.parse(block.accessory.value);
+
+            value.closed = true;
+
+            blocks[i].accessory.value = JSON.stringify(value);
+          }
+        }
+      }
+
+      if (blocks[0].accessory.option_groups) {
+        const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
+        blocks[0].accessory.option_groups[0].options =
+          staticSelectMenu.map(el => {
+            value = JSON.parse(el.value);
+            if (el.value && 'btn_close' === value.action) {
+              el.text.text = isClosed ? 'Close the poll' : 'Reopen the poll';
+              value.closed = !value.closed;
+              el.value = JSON.stringify(value);
+            }
+            return el;
+          });
+      }
+
+      const infosIndex =
+        blocks.findIndex(el => el.type === 'context' && el.elements);
+      blocks[infosIndex].elements = buildInfosBlocks(blocks);
+
+      await app.client.chat.update({
+        token: context.botToken,
+        channel: channel,
+        ts: message.ts,
+        blocks: blocks,
+      });
+    } finally {
+      release();
     }
-
-    const infosIndex =
-      blocks.findIndex(el => el.type === 'context' && el.elements);
-    blocks[infosIndex].elements = buildInfosBlocks(blocks);
-
-    await app.client.chat.update({
+  } else {
+    await app.client.chat.postEphemeral({
       token: context.botToken,
-      channel: channel,
-      ts: message.ts,
-      blocks: blocks,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: 'An error occurred while attempt to close the poll. Please try again in few seconds.',
     });
-  } finally {
-    release();
   }
 }
 
