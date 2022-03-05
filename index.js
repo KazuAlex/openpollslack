@@ -2051,7 +2051,6 @@ async function revealOrHideVotes(body, context, value) {
         attachments: [],
         text: `An error occurred during ${isHidden ? 'hide' : 'reveal'} process. Please try again in few seconds.`,
       });
-      throw e;
     } finally {
       release();
     }
