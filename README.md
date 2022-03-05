@@ -8,6 +8,21 @@ But feel free to open new issues on both.
 
 If you have an error when submitting poll, please use the "Add to slack" button [on site](https://openpoll.slack.alcor.space/) to re-authorize the bot on your workspace
 
+### Migrate to v3
+
+To upgrade to v3, you need to have a mongo database.  
+Setup your `config/default.json` with new database url and database name:
+- `mongo_url`: the url to connect to your mongo database
+- `mongo_db_name`: your mongo database name
+
+After that, migrate your old database to the mongo with the script:  
+At the root directory, run `./scripts/migrate-v3.sh [MONGO_URL] [MONGO_DB_NAME]`  
+Replace `[MONGO_URL]` by the same `mongo_url` and `[MONGO_DB_NAME]` with the same `mongo_db_name` set in your `config/default.json`.  
+As an example, with the default data from `config/default.json.dist`, the command line to migrate is:
+```
+./scripts/migrate-v3.sh mongodb://localhost:27017 open_poll
+```
+
 ## License
 
 The code is under GNU GPL license. So, you are free to modify the code and redistribute it under same license.  
