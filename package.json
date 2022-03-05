@@ -30,7 +30,7 @@
     "config": "^3.3.6",
     "express": "^4.17.1",
     "helmet": "^3.23.3",
-    "node-json-db": "^1.4.1",
+    "mongodb": "^4.4.0",
     "request": "^2.88.2"
   }
 }

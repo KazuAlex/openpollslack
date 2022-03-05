@@ -1,8 +1,7 @@
 const { App, ExpressReceiver, LogLevel } = require('@slack/bolt');
 const config = require('config');
 
-const { JsonDB } = require('node-json-db');
-const JsonDBConfig = require('node-json-db/dist/lib/JsonDBConfig').Config;
+const { MongoClient } = require('mongodb');
 
 const { Mutex } = require('async-mutex');
 
@@ -12,13 +11,28 @@ const slackCommand = config.get('command');
 const helpLink = config.get('help_link');
 const supportUrl = config.get('support_url');
 
-const orgDb = new JsonDB(new JsonDBConfig('config/open_poll', true, false, '/'));
-const pollsDb = new JsonDB(new JsonDBConfig('config/polls', true, false, '/'));
+const client = new MongoClient(config.get('mongo_url'));
+let orgCol = null;
+let votesCol = null;
+let closedCol = null;
+let hiddenCol = null;
 
 const mutexes = {};
 
-orgDb.push('/token', {}, false);
-pollsDb.push('/polls', {}, false);
+try {
+  console.log('Connecting to database server...');
+  client.connect();
+  console.log('Connected successfully to server')
+  const db = client.db(config.get('mongo_db_name'));
+  orgCol = db.collection('token');
+  votesCol = db.collection('votes');
+  closedCol = db.collection('closed');
+  hiddenCol = db.collection('hidden');
+} catch (e) {
+  client.close();
+  console.err(e)
+  process.exit();
+}
 
 const receiver = new ExpressReceiver({
   signingSecret: signing_secret,
@@ -44,25 +58,21 @@ const receiver = new ExpressReceiver({
     },
   },
   installationStore: {
-    storeInstallation: (installation) => {
-      // save informations
-      orgDb.push(`/token/${installation.team.id}`, installation, false);
-      orgDb.reload();
+    storeInstallation: async (installation) => {
+      const team = await orgCol.findOne({ 'team.id': installation.team.id });
+      if (team) {
+        await orgCol.replaceOne({ 'team.id': installation.team.id }, installation);
+      } else {
+        await orgCol.insertOne(installation);
+      }
 
-      // distinct scopes
-      installation = orgDb.getData(`/token/${installation.team.id}`);
-      installation.bot.scopes = installation.bot.scopes.filter(function (value, index, self) {
-        return index === self.indexOf(value);
-      });
-      orgDb.push(`/token/${installation.team.id}`, installation, false);
-      orgDb.reload();
-
-      return installation.teamId;
+      return installation.team.id;
     },
-    fetchInstallation: (InstallQuery) => {
+    fetchInstallation: async (InstallQuery) => {
       try {
-        return orgDb.getData(`/token/${InstallQuery.teamId}`);
+        return await orgCol.findOne({ 'team.id': InstallQuery.teamId });
       } catch (e) {
+        console.error(e)
         throw new Error('No matching authorizations');
       }
     },
@@ -741,89 +751,12 @@ app.action('btn_reveal', async ({ action, ack, body, context }) => {
     return;
   }
 
-  if (value.hasOwnProperty('revealed') && value.revealed) {
-    console.log('poll already revealed');
-    await app.client.chat.postEphemeral({
-      token: context.botToken,
-      channel: body.channel.id,
-      user: body.user.id,
-      attachments: [],
-      text: "This poll is already revealed.",
-    });
-    return;
-  }
-
-  let message = body.message;
-  let channel = body.channel.id;
-  let blocks = message.blocks;
-  poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
-
-  for (const i in blocks) {
-    let b = blocks[i];
-    if (
-      b.hasOwnProperty('accessory')
-      && b.accessory.hasOwnProperty('value')
-    ) {
-      let val = JSON.parse(b.accessory.value);
-      val.hidden = false;
-
-      if (!val.hasOwnProperty('voters')) {
-        val.voters = [];
-      }
-
-      val.voters = poll[val.id];
-      let newVoters = '';
-
-      if (poll[val.id].length === 0) {
-        newVoters = 'No votes';
-      } else {
-        newVoters = '';
-        for (const voter of poll[val.id]) {
-          if (!val.anonymous) {
-            newVoters += '<@'+voter+'> ';
-          }
-        }
-
-        newVoters += poll[val.id].length +' ';
-        if (poll[val.id].length === 1) {
-          newVoters += 'vote';
-        } else {
-          newVoters += 'votes';
-        }
-      }
-
-      blocks[i].accessory.value = JSON.stringify(val);
-      const nextI = ''+(parseInt(i)+1);
-      if (blocks[nextI].hasOwnProperty('elements')) {
-        blocks[nextI].elements[0].text = newVoters;
-      }
-    }
-  }
-
-  let b = blocks[blocks.length - 1];
-
-  if (
-    b.hasOwnProperty('elements')
-    && b.elements.length > 0
-  ) {
-    let elements = [];
-    for (const i in b.elements) {
-      let el = b.elements[i];
-      if ('btn_reveal' !== el.action_id) {
-        elements.push(el);
-      }
-    }
-
-    b.elements = elements;
-  }
-
-  blocks[blocks.length - 1] = b;
-
-  await app.client.chat.update({
+  await app.client.chat.postEphemeral({
     token: context.botToken,
-    channel: channel,
-    ts: message.ts,
-    blocks: blocks,
+    channel: body.channel.id,
+    user: body.user.id,
+    attachments: [],
+    text: 'Your poll is too old. Please create new one.',
   });
 });
 
@@ -871,11 +804,11 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
 
   if (release) {
     try {
-      pollsDb.reload();
 
       let isClosed = false
       try {
-        isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+        const data = await closedCol.findOne({ team: message.team, ts: message.ts });
+        isClosed = data !== null && data.closed;
       } catch {}
 
       if (isClosed) {
@@ -889,10 +822,16 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         return;
       }
 
-      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, {}, false);
-      poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
-
-      if (0 === Object.keys(poll).length) {
+      let poll = null;
+      const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
+      if (data === null) {
+        await votesCol.insertOne({
+          team: message.team,
+          channel,
+          ts: message.ts,
+          votes: {},
+        });
+        poll = {};
         for (const b of blocks) {
           if (
             b.hasOwnProperty('accessory')
@@ -902,7 +841,29 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
             poll[val.id] = val.voters ? val.voters : [];
           }
         }
+        await votesCol.updateOne({
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }, {
+          $set: {
+            votes: poll,
+          }
+        });
+      } else {
+        poll = data.votes;
       }
+
+      const isHidden = await getInfos(
+        'hidden',
+        blocks, 
+        {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        },
+      )
+
       button_id = 3 + (value.id * 2);
       context_id = 3 + (value.id * 2) + 1;
       let blockBtn = blocks[button_id];
@@ -960,7 +921,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
           val.voters = poll[val.id];
           let newVoters = '';
 
-          if (val.hasOwnProperty('hidden') && val.hidden) {
+          if (isHidden) {
             newVoters = 'Wait for reveal';
           } else if (poll[val.id].length === 0) {
             newVoters = 'No votes';
@@ -968,7 +929,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
             newVoters = '';
             for (const voter of poll[val.id]) {
               if (!val.anonymous) {
-                newVoters += '<@'+voter+'> ';
+                newVoters += `<@${voter}> `;
               }
             }
 
@@ -988,7 +949,31 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         }
       }
 
-      pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll);
+      const infosIndex = blocks.findIndex(el => el.type === 'context' && el.elements)
+      blocks[infosIndex].elements = await buildInfosBlocks(
+        blocks,
+        {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }
+      );
+      blocks[0].accessory.option_groups[0].options =
+        await buildMenu(blocks, {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        });
+
+      await votesCol.updateOne({
+        team: message.team,
+        channel,
+        ts: message.ts,
+      }, {
+        $set: {
+          votes: poll,
+        }
+      });
 
       await app.client.chat.update({
         token: context.botToken,
@@ -997,7 +982,8 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         blocks: blocks,
         text: message.text,
       });
-    } catch {
+    } catch (e) {
+      console.error(e);
       await app.client.chat.postEphemeral({
         token: context.botToken,
         channel: body.channel.id,
@@ -1778,7 +1764,36 @@ async function usersVotes(body, client, context, value) {
   let poll = null;
 
   try {
-    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
+    const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
+    if (data === null) {
+      await votesCol.insertOne({
+        team: message.team,
+        channel,
+        ts: message.ts,
+        votes: {},
+      });
+      poll = {};
+      for (const b of blocks) {
+        if (
+          b.hasOwnProperty('accessory')
+          && b.accessory.hasOwnProperty('value')
+        ) {
+          const val = JSON.parse(b.accessory.value);
+          poll[val.id] = val.voters ? val.voters : [];
+        }
+      }
+      await votesCol.updateOne({
+        team: message.team,
+        channel,
+        ts: message.ts,
+      }, {
+        $set: {
+          votes: poll,
+        }
+      });
+    } else {
+      poll = data.votes;
+    }
   } catch(e) {
   }
 
@@ -1881,180 +1896,174 @@ async function revealOrHideVotes(body, context, value) {
     return;
   }
 
-  let isReveal = !value.revealed;
+  let isHidden = !value.revealed;
   let message = body.message;
   let channel = body.channel.id;
   let blocks = message.blocks;
-  let poll = null;
-  try {
-    poll = pollsDb.getData(`/${message.team}/${channel}/${message.ts}`);
-  } catch (e) {
-    if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
-      mutexes[`${message.team}/${channel}/${message.ts}`] = new Mutex();
+
+  if (!mutexes.hasOwnProperty(`${message.team}/${channel}/${message.ts}`)) {
+    mutexes[`${message.team}/${channel}/${message.ts}`] = new Mutex();
+  }
+
+  let release = null;
+  let countTry = 0;
+  do {
+    ++countTry;
+
+    try {
+      release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
+    } catch (e) {
+      console.log(`[Try #${countTry}] Error while attempt to acquire mutex lock.`, e)
     }
+  } while (!release && countTry < 3);
 
-    let release = null;
-    let countTry = 0;
-    do {
-      ++countTry;
+  if (release) {
+    try {
+      let poll = null;
+      const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
 
-      try {
-        release = await mutexes[`${message.team}/${channel}/${message.ts}`].acquire();
-      } catch (e) {
-        console.log(`[Try #${countTry}] Error while attempt to acquire mutex lock.`, e)
-      }
-    } while (!release && countTry < 3);
-
-    if (release) {
-      try {
-        pollsDb.reload();
+      if (data === null) {
+        await votesCol.insertOne({
+          team: message.team,
+          channel,
+          ts: message.ts,
+          votes: {},
+        });
         poll = {};
-
-        if (0 === Object.keys(poll).length) {
-          for (const b of blocks) {
-            if (
-              b.hasOwnProperty('accessory')
-              && b.accessory.hasOwnProperty('value')
-            ) {
-              const val = JSON.parse(b.accessory.value);
-              poll[val.id] = val.voters ? val.voters : [];
-            }
+        for (const b of blocks) {
+          if (
+            b.hasOwnProperty('accessory')
+            && b.accessory.hasOwnProperty('value')
+          ) {
+            const val = JSON.parse(b.accessory.value);
+            poll[val.id] = val.voters ? val.voters : [];
           }
         }
-
-        pollsDb.push(`/${message.team}/${channel}/${message.ts}`, poll, false);
-      } finally {
-        release();
+        await votesCol.updateOne({
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }, {
+          $set: {
+            votes: poll,
+          }
+        });
+      } else {
+        poll = data.votes;
       }
-    }
 
-    if (!poll) {
-      console.error('Error creating poll votes data.');
-      await app.client.chat.postEphemeral({
+      const infos = await getInfos(
+        ['anonymous', 'limited', 'limit', 'hidden'],
+        blocks,
+        {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }
+      );
+      isHidden = !infos.hidden;
+
+      await hiddenCol.updateOne({
+        team: message.team,
+        channel,
+        ts: message.ts,
+      }, {
+        $set: {
+          hidden: isHidden,
+        },
+      });
+
+      for (const i in blocks) {
+        let b = blocks[i];
+        if (
+          b.hasOwnProperty('accessory')
+          && b.accessory.hasOwnProperty('value')
+        ) {
+          let val = JSON.parse(b.accessory.value);
+          val.hidden = isHidden;
+
+          val.voters = poll[val.id];
+          let newVoters = '';
+
+          if (isHidden) {
+            newVoters = 'Wait for reveal';
+          } else {
+            if (poll[val.id].length === 0) {
+              newVoters = 'No votes';
+            } else {
+              newVoters = '';
+              for (const voter of poll[val.id]) {
+                if (!val.anonymous) {
+                  newVoters += `<@${voter}> `;
+                }
+              }
+
+              const vLength = poll[val.id].length;
+              newVoters += `${poll[val.id].length} vote${vLength === 1 ? '' : 's'}`;
+            }
+          }
+
+          blocks[i].accessory.value = JSON.stringify(val);
+          const nextI = ''+(parseInt(i)+1);
+          if (blocks[nextI].hasOwnProperty('elements')) {
+            blocks[nextI].elements[0].text = newVoters;
+          }
+        }
+      }
+
+      if (blocks[0].accessory.options) {
+        blocks[0].accessory.options = await buildMenu(blocks, {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        });
+      } else if (blocks[0].accessory.option_groups) {
+        blocks[0].accessory.option_groups[0].options = await buildMenu(blocks, {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        });
+      }
+
+      const infosIndex = blocks.findIndex(el => el.type === 'context' && el.elements)
+      blocks[infosIndex].elements = await buildInfosBlocks(
+        blocks,
+        {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }
+      );
+
+      await app.client.chat.update({
         token: context.botToken,
         channel: channel,
+        ts: message.ts,
+        blocks: blocks,
+        text: message.text,
+      });
+    } catch (e) {
+      console.error(e);
+      await app.client.chat.postEphemeral({
+        token: context.botToken,
+        channel: body.channel.id,
         user: body.user.id,
         attachments: [],
-        text: `An error occurred while attempt to ${isReveal ? 'reveal' : 'hide'} the poll. Please try again in few seconds.`,
+        text: `An error occurred during ${isHidden ? 'hide' : 'reveal'} process. Please try again in few seconds.`,
       });
-      return;
+      throw e;
+    } finally {
+      release();
     }
-  }
-
-  const infos = getInfos(['anonymous', 'limited', 'limit'], blocks);
-  infos.hidden = !isReveal;
-
-  for (const i in blocks) {
-    let b = blocks[i];
-    if (
-      b.hasOwnProperty('accessory')
-      && b.accessory.hasOwnProperty('value')
-    ) {
-      let val = JSON.parse(b.accessory.value);
-      val.hidden = !isReveal;
-
-      if (!val.hasOwnProperty('voters')) {
-        val.voters = [];
-      }
-
-      val.voters = poll[val.id];
-      let newVoters = '';
-
-      if (isReveal) {
-        if (poll[val.id].length === 0) {
-          newVoters = 'No votes';
-        } else {
-          newVoters = '';
-          for (const voter of poll[val.id]) {
-            if (!val.anonymous) {
-              newVoters += '<@'+voter+'> ';
-            }
-          }
-
-          newVoters += poll[val.id].length +' ';
-          if (poll[val.id].length === 1) {
-            newVoters += 'vote';
-          } else {
-            newVoters += 'votes';
-          }
-        }
-      } else {
-        newVoters = 'Wait for reveal';
-      }
-
-      blocks[i].accessory.value = JSON.stringify(val);
-      const nextI = ''+(parseInt(i)+1);
-      if (blocks[nextI].hasOwnProperty('elements')) {
-        blocks[nextI].elements[0].text = newVoters;
-      }
-    }
-  }
-
-  // replace reveal/hide button
-  if (body.message.blocks[0].accessory.options) {
-    const overflowMenu = blocks[0].accessory.options;
-    blocks[0].accessory.options = overflowMenu.map(el => {
-      value = JSON.parse(el.value);
-      if (el.value && 'btn_reveal' === value.action) {
-        el.text.text = isReveal ? ':ninja: Hide votes': ':eyes: Reveal the votes';
-        value.revealed = !value.revealed;
-        el.value = JSON.stringify(value);
-      }
-      return el;
+  } else {
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: 'An error occurred during vote processing. Please try again in few seconds.',
     });
-    if (isReveal) {
-      blocks[0].accessory.options = overflowMenu.filter(el => {
-        return el.value && 'btn_users_votes' !== JSON.parse(el.value).action;
-      });
-    } else {
-      blocks[0].accessory.options.push({
-        text: {
-          type: 'plain_text',
-          text: ':page_with_curl: See users votes',
-          emoji: true,
-        },
-        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
-      });
-    }
-  } else if (body.message.blocks[0].accessory.option_groups) {
-    const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
-    blocks[0].accessory.option_groups[0].options =
-      staticSelectMenu.map(el => {
-        value = JSON.parse(el.value);
-        if (el.value && 'btn_reveal' === value.action) {
-          el.text.text = isReveal ? 'Hide votes' : 'Reveal votes';
-          value.revealed = !value.revealed;
-          el.value = JSON.stringify(value);
-        }
-        return el;
-      });
-    if (isReveal) {
-      blocks[0].accessory.option_groups[0].options =
-        staticSelectMenu.filter(
-          el => el.value && 'btn_users_votes' != JSON.parse(el.value).action
-        );
-    } else {
-      blocks[0].accessory.option_groups[0].options.push({
-        text: {
-          type: 'plain_text',
-          text: 'See users votes',
-          emoji: true,
-        },
-        value: JSON.stringify({action: 'btn_users_votes', user: value.user}),
-      });
-    }
   }
-
-  // add/remove hidden votes info
-  const infosIndex = blocks.findIndex(el => el.type === 'context' && el.elements)
-  blocks[infosIndex].elements = buildInfosBlocks(blocks);
-
-  await app.client.chat.update({
-    token: context.botToken,
-    channel: channel,
-    ts: message.ts,
-    blocks: blocks,
-  });
 }
 
 async function deletePoll(body, context, value) {
@@ -2143,12 +2152,25 @@ async function closePoll(body, client, context, value) {
     try {
       let isClosed = false
       try {
-        isClosed = pollsDb.getData(`/polls/closed/${message.team}/${message.ts}`);
+        const data = await closedCol.findOne({ team: message.team, ts: message.ts });
+        if (data === null) {
+          await closedCol.insertOne({
+            team: message.team,
+            ts: message.ts,
+            closed: false,
+          });
+        }
+        isClosed = data !== null && data.closed;
       } catch {}
 
-      if (isClosed) {
-        pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, false, false);
+      await closedCol.updateOne({
+        team: message.team,
+        ts: message.ts,
+      }, {
+        $set: { closed: !isClosed }
+      });
 
+      if (isClosed) {
         for (const i in blocks) {
           const block = blocks[i];
 
@@ -2164,8 +2186,6 @@ async function closePoll(body, client, context, value) {
           }
         }
       } else {
-        pollsDb.push(`/polls/closed/${message.team}/${message.ts}`, true, false);
-
         for (const i in blocks) {
           const block = blocks[i];
 
@@ -2185,26 +2205,39 @@ async function closePoll(body, client, context, value) {
       if (blocks[0].accessory.option_groups) {
         const staticSelectMenu = blocks[0].accessory.option_groups[0].options;
         blocks[0].accessory.option_groups[0].options =
-          staticSelectMenu.map(el => {
-            value = JSON.parse(el.value);
-            if (el.value && 'btn_close' === value.action) {
-              el.text.text = isClosed ? 'Close the poll' : 'Reopen the poll';
-              value.closed = !value.closed;
-              el.value = JSON.stringify(value);
-            }
-            return el;
+          await buildMenu(blocks, {
+            team: message.team,
+            channel,
+            ts: message.ts,
           });
       }
 
       const infosIndex =
         blocks.findIndex(el => el.type === 'context' && el.elements);
-      blocks[infosIndex].elements = buildInfosBlocks(blocks);
+      blocks[infosIndex].elements = await buildInfosBlocks(
+        blocks,
+        {
+          team: message.team,
+          channel,
+          ts: message.ts,
+        }
+      );
 
       await app.client.chat.update({
         token: context.botToken,
-        channel: channel,
+        channel,
         ts: message.ts,
         blocks: blocks,
+        text: message.text,
+      });
+    } catch (e) {
+      console.error(e);
+      await app.client.chat.postEphemeral({
+        token: context.botToken,
+        channel: body.channel.id,
+        user: body.user.id,
+        attachments: [],
+        text: 'An error occurred while attempt to close the poll. Please try again in few seconds.',
       });
     } finally {
       release();
@@ -2222,9 +2255,58 @@ async function closePoll(body, client, context, value) {
 
 
 // global functions
-function getInfos(infos, blocks) {
+async function getInfos(infos, blocks, pollInfos) {
   const multi = Array.isArray(infos);
   let result = multi ? {} : null;
+  let toFix = [];
+
+  if (pollInfos) {
+    if (multi && infos.includes('closed')) {
+      const data = await closedCol.findOne({
+        team: pollInfos.team,
+        ts: pollInfos.ts,
+      });
+
+      if (data !== null) {
+        result['closed'] = data.closed;
+        infos = infos.filter(i => i !== 'closed');
+      } else {
+        toFix.push('closed');
+      }
+    } else if (infos === 'closed') {
+      const data = await closedCol.findOne({
+        team: pollInfos.team,
+        ts: pollInfos.ts,
+      });
+
+      if (data !== null) return data.closed;
+      else toFix.push('closed');
+    }
+
+    if (multi && infos.includes('hidden')) {
+      const data = await hiddenCol.findOne({
+        team: pollInfos.team,
+        channel: pollInfos.channel,
+        ts: pollInfos.ts,
+      });
+
+      if (data !== null) {
+        result['hidden'] = data.hidden;
+        infos = infos.filter(i => i !== 'hidden');
+      } else {
+        toFix.push('hidden');
+      }
+    } else if (infos === 'hidden') {
+      const data = await hiddenCol.findOne({
+        team: pollInfos.team,
+        channel: pollInfos.channel,
+        ts: pollInfos.ts,
+      });
+
+      if (data !== null) return data.hidden;
+      else toFix.push('hidden');
+    }
+  }
 
   if (multi) {
     for (const i of infos) {
@@ -2247,12 +2329,50 @@ function getInfos(infos, blocks) {
         }
 
         if (!Object.keys(result).find(i => result[i] === null)) {
-          return result;
+          break;
         }
       } else {
         if (value.hasOwnProperty(infos)) {
-          return value[infos];
+          result = value[infos];
+          break;
         }
+      }
+    }
+  }
+
+  if (toFix.length > 0) {
+    if (multi) {
+      if (toFix.includes('closed') && result['closed'] !== null) {
+        closedCol.insertOne({
+          team: pollInfos.team,
+          channel: pollInfos.channel,
+          ts: pollInfos.ts,
+          closed: result['closed'],
+        });
+      }
+      if (toFix.includes('hidden') && result['hidden'] !== null) {
+        hiddenCol.insertOne({
+          team: pollInfos.team,
+          channel: pollInfos.channel,
+          ts: pollInfos.ts,
+          hidden: result['hidden'],
+        });
+      }
+    } else {
+      if (toFix.includes('closed') && result !== null) {
+        closedCol.insertOne({
+          team: pollInfos.team,
+          channel: pollInfos.channel,
+          ts: pollInfos.ts,
+          closed: result,
+        });
+      } else if (toFix.includes('hidden') && result !== null) {
+        hiddenCol.insertOne({
+          team: pollInfos.team,
+          channel: pollInfos.channel,
+          ts: pollInfos.ts,
+          hidden: result,
+        });
       }
     }
   }
@@ -2260,11 +2380,11 @@ function getInfos(infos, blocks) {
   return result;
 }
 
-function buildInfosBlocks(blocks) {
+async function buildInfosBlocks(blocks, pollInfos) {
   const infosIndex =
     blocks.findIndex(el => el.type === 'context' && el.elements);
   const infosBlocks = [];
-  const infos = getInfos(['anonymous', 'limited', 'limit', 'hidden', 'closed'], blocks);
+  const infos = await getInfos(['anonymous', 'limited', 'limit', 'hidden', 'closed'], blocks, pollInfos);
 
   if (infos.anonymous) {
     infosBlocks.push({
@@ -2292,4 +2412,38 @@ function buildInfosBlocks(blocks) {
   }
   infosBlocks.push(blocks[infosIndex].elements.pop());
   return infosBlocks;
+}
+
+async function buildMenu(blocks, pollInfos) {
+  const infos = await getInfos(['closed', 'hidden'], blocks, pollInfos);
+
+  if (blocks[0].accessory.option_groups) {
+    return blocks[0].accessory.option_groups[0].options.map(el => {
+      const value = JSON.parse(el.value);
+      if (value && 'btn_close' === value.action) {
+        el.text.text = infos['closed'] ? 'Reopen the poll' : 'Close the poll';
+        value.closed = !value.closed;
+        el.value = JSON.stringify(value);
+      } else if (value && 'btn_reveal' === value.action) {
+        el.text.text = infos['hidden'] ? 'Reveal votes' : 'Hide votes';
+        value.revealed = !value.closed;
+        el.value = JSON.stringify(value);
+      }
+
+      return el;
+    });
+  } else if (blocks[0].accessory.options) {
+    return blocks[0].accessory.options.map((el) => {
+      const value = JSON.parse(el.value);
+      if (value && 'btn_reveal' === value.action) {
+        el.text.text = infos['hidden'] ? 'Reveal votes' : 'Hide votes';
+        value.revealed = !value.closed;
+        el.value = JSON.stringify(value);
+      }
+
+      return el;
+    });
+  }
+
+  return null;
 }
