@@ -3,6 +3,8 @@ const config = require('config');
 
 const { MongoClient } = require('mongodb');
 
+const { Migrations } = require('./utils/migrations');
+
 const { Mutex } = require('async-mutex');
 
 const port = config.get('port');
@@ -17,6 +19,8 @@ let votesCol = null;
 let closedCol = null;
 let hiddenCol = null;
 
+let migrations = null;
+
 const mutexes = {};
 
 try {
@@ -28,9 +32,11 @@ try {
   votesCol = db.collection('votes');
   closedCol = db.collection('closed');
   hiddenCol = db.collection('hidden');
+
+  migrations = new Migrations(db);
 } catch (e) {
   client.close();
-  console.err(e)
+  console.error(e)
   process.exit();
 }
 
@@ -550,6 +556,11 @@ const modalBlockInput = {
 };
 
 (async () => {
+  console.log('Start database migration.');
+  await migrations.init();
+  await migrations.migrate();
+  console.log('End database migration.')
+
   await app.start(process.env.PORT || port);
 
   console.log('Bolt app is running!');
@@ -807,7 +818,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
 
       let isClosed = false
       try {
-        const data = await closedCol.findOne({ team: message.team, ts: message.ts });
+        const data = await closedCol.findOne({ channel, ts: message.ts });
         isClosed = data !== null && data.closed;
       } catch {}
 
@@ -823,7 +834,7 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
       }
 
       let poll = null;
-      const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
+      const data = await votesCol.findOne({ channel: channel, ts: message.ts });
       if (data === null) {
         await votesCol.insertOne({
           team: message.team,
@@ -842,7 +853,6 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
           }
         }
         await votesCol.updateOne({
-          team: message.team,
           channel,
           ts: message.ts,
         }, {
@@ -966,7 +976,6 @@ app.action('btn_vote', async ({ action, ack, body, context }) => {
         });
 
       await votesCol.updateOne({
-        team: message.team,
         channel,
         ts: message.ts,
       }, {
@@ -1764,7 +1773,7 @@ async function usersVotes(body, client, context, value) {
   let poll = null;
 
   try {
-    const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
+    const data = await votesCol.findOne({ channel: channel, ts: message.ts });
     if (data === null) {
       await votesCol.insertOne({
         team: message.team,
@@ -1783,7 +1792,6 @@ async function usersVotes(body, client, context, value) {
         }
       }
       await votesCol.updateOne({
-        team: message.team,
         channel,
         ts: message.ts,
       }, {
@@ -1920,7 +1928,7 @@ async function revealOrHideVotes(body, context, value) {
   if (release) {
     try {
       let poll = null;
-      const data = await votesCol.findOne({ team: message.team, channel: channel, ts: message.ts });
+      const data = await votesCol.findOne({ channel: channel, ts: message.ts });
 
       if (data === null) {
         await votesCol.insertOne({
@@ -1940,7 +1948,6 @@ async function revealOrHideVotes(body, context, value) {
           }
         }
         await votesCol.updateOne({
-          team: message.team,
           channel,
           ts: message.ts,
         }, {
@@ -1964,7 +1971,6 @@ async function revealOrHideVotes(body, context, value) {
       isHidden = !infos.hidden;
 
       await hiddenCol.updateOne({
-        team: message.team,
         channel,
         ts: message.ts,
       }, {
@@ -2151,7 +2157,7 @@ async function closePoll(body, client, context, value) {
     try {
       let isClosed = false
       try {
-        const data = await closedCol.findOne({ team: message.team, ts: message.ts });
+        const data = await closedCol.findOne({ channel, ts: message.ts });
         if (data === null) {
           await closedCol.insertOne({
             team: message.team,
@@ -2163,7 +2169,7 @@ async function closePoll(body, client, context, value) {
       } catch {}
 
       await closedCol.updateOne({
-        team: message.team,
+        channel,
         ts: message.ts,
       }, {
         $set: { closed: !isClosed }
@@ -2262,7 +2268,7 @@ async function getInfos(infos, blocks, pollInfos) {
   if (pollInfos) {
     if (multi && infos.includes('closed')) {
       const data = await closedCol.findOne({
-        team: pollInfos.team,
+        channel: pollInfos.channel,
         ts: pollInfos.ts,
       });
 
@@ -2274,7 +2280,7 @@ async function getInfos(infos, blocks, pollInfos) {
       }
     } else if (infos === 'closed') {
       const data = await closedCol.findOne({
-        team: pollInfos.team,
+        channel: pollInfos.channel,
         ts: pollInfos.ts,
       });
 
@@ -2284,7 +2290,6 @@ async function getInfos(infos, blocks, pollInfos) {
 
     if (multi && infos.includes('hidden')) {
       const data = await hiddenCol.findOne({
-        team: pollInfos.team,
         channel: pollInfos.channel,
         ts: pollInfos.ts,
       });
@@ -2297,7 +2302,6 @@ async function getInfos(infos, blocks, pollInfos) {
       }
     } else if (infos === 'hidden') {
       const data = await hiddenCol.findOne({
-        team: pollInfos.team,
         channel: pollInfos.channel,
         ts: pollInfos.ts,
       });
