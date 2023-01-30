@@ -1391,6 +1391,7 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
   }
 
   const blocks = [];
+  let addInfo = ""; //additional info line
 
   const staticSelectElements = [{
     label: {
@@ -1498,6 +1499,19 @@ function createPollView(question, options, isAnonymous, isLimited, limit, isHidd
     type: 'context',
     elements: elements,
   });
+  if(isAnonymous) {
+    if(addInfo!=="") addInfo += "\n";
+    addInfo += 'NOTE: Poll creator can still see who voted which options';
+  }
+  if(addInfo!=="") {
+    blocks.push({
+      type: 'context',
+      elements: [{
+        type: 'mrkdwn',
+        text: addInfo,
+      }],
+    });
+  }
   blocks.push({
     type: 'divider',
   });
