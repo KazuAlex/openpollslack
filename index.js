@@ -1769,6 +1769,19 @@ async function usersVotes(body, client, context, value) {
   const channel = body.channel.id;
   const blocks = message.blocks;
 
+  const { anonymous } = await getInfos(['anonymous'], blocks)
+
+  if (anonymous) {
+    await app.client.chat.postEphemeral({
+      token: context.botToken,
+      channel: body.channel.id,
+      user: body.user.id,
+      attachments: [],
+      text: "Sorry but you can't see anonymous votes",
+    });
+    return;
+  }
+
   const votes = [];
   let poll = null;
 
