@@ -62,6 +62,12 @@ For both question and choices, feel free to use slack's emoji, `*bold*` `~strike
 
 Wiki pages are available to help you with the [app configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Self-hosted-installation-(v2)) and the [web page configuration](https://gitlab.com/KazuAlex/openpollslack/-/wikis/Web-page).
 
+## Known issues
+
+### More than 15 options
+
+If you have more than 15 options, you will probably raise an error. It's a slack limitation (see [issue #24](https://gitlab.com/openpollslack/openpollslack/-/issues/24)).
+
 ## Support me
 
 To support or thank me, you can contact me. I would be happy to provide you my PayPal address.
