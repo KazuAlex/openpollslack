@@ -28,7 +28,7 @@ As an example, with the default data from `config/default.json.dist`, the comman
 The code is under GNU GPL license. So, you are free to modify the code and redistribute it under same license.  
   
 Remember the four freedoms of the GPL :  
-> the freedom to use the software for any purpose,
+> * the freedom to use the software for any purpose,
 > * the freedom to change the software to suit your needs,
 > * the freedom to share the software with your friends and neighbors, and
 > * the freedom to share the changes you make.
